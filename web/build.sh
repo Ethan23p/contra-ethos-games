@@ -5,7 +5,7 @@ set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 out="$root/target/site"
-apps=(sandbox)
+apps=(sandbox dice)
 
 # Empty the folder rather than deleting it, so a local server running inside it survives.
 mkdir -p "$out"

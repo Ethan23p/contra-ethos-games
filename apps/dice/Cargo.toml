@@ -1,0 +1,15 @@
+[package]
+name = "dice-app"
+description = "Dice Merge: the rules from crates/dice, drawn and animated with the engine."
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "dice"
+path = "src/main.rs"
+
+[dependencies]
+engine.workspace = true
+dice.workspace = true
+web-time.workspace = true

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Dice Merge · contra-ethos</title>
+  <link data-trunk rel="rust" data-bin="dice" data-wasm-opt="z">
+  <style>
+    html, body { margin: 0; height: 100%; background: #0a0908; overflow: hidden; }
+    canvas { display: block; width: 100vw; height: 100dvh; touch-action: none; outline: none; }
+    #no-webgpu { position: fixed; inset: 0; display: grid; place-items: center; margin: 0;
+                 color: #ddd; font: 16px/1.4 system-ui, sans-serif; text-align: center; padding: 16px; }
+    #no-webgpu[hidden] { display: none; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <p id="no-webgpu" hidden>This needs a browser with WebGPU.</p>
+  <script>if (!navigator.gpu) document.getElementById('no-webgpu').hidden = false;</script>
+</body>
+</html>

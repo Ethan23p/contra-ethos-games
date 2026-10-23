@@ -323,10 +323,7 @@ impl ShapeRenderer {
                 compilation_options: Default::default(),
                 buffers: &[Some(instance_layout)],
             },
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
-                ..Default::default()
-            },
+            primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleStrip, ..Default::default() },
             depth_stencil: None,
             multisample: Default::default(),
             fragment: Some(wgpu::FragmentState {

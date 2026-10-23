@@ -1,0 +1,8 @@
+[serve]
+# 8080 is taken by Steam on this machine.
+addresses = ["127.0.0.1"]
+port = 8766
+
+[watch]
+# Rebuild on engine and game-crate edits too, not only this app.
+watch = [".", "../../crates"]

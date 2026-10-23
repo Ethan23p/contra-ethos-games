@@ -31,7 +31,7 @@ struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            gravity: 220.0,
+            gravity: 420.0,
             bounce: 0.82,
             corner: 3.0,
             outline: 0.9,

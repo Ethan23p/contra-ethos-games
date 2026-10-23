@@ -177,10 +177,8 @@ impl<C: Tunable> Tuner<C> {
     }
 
     fn load(&mut self, text: &str) {
-        let (defaults, current) = text
-            .strip_prefix("[default]\n")
-            .and_then(|rest| rest.split_once("[current]\n"))
-            .unwrap_or(("", text));
+        let (defaults, current) =
+            text.strip_prefix("[default]\n").and_then(|rest| rest.split_once("[current]\n")).unwrap_or(("", text));
         apply_values(&self.fields, &mut self.default, defaults);
         self.current = self.default.clone();
         apply_values(&self.fields, &mut self.current, current);
@@ -303,7 +301,9 @@ fn apply_values<C>(fields: &[Field<C>], c: &mut C, text: &str) {
     }
 }
 
-mod storage {
+/// Small strings that outlive the page: localStorage on the web, a temp-dir
+/// file natively. Tunables use it; games may too (a best score, say).
+pub mod storage {
     #[cfg(target_arch = "wasm32")]
     fn local() -> Option<web_sys::Storage> {
         web_sys::window()?.local_storage().ok()?

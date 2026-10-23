@@ -527,6 +527,15 @@ name = "dice"
 version = "0.1.0"
 
 [[package]]
+name = "dice-app"
+version = "0.1.0"
+dependencies = [
+ "dice",
+ "engine",
+ "web-time",
+]
+
+[[package]]
 name = "dispatch"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

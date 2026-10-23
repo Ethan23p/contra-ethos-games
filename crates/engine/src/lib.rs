@@ -14,8 +14,8 @@ pub mod tune;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod headless;
 
+pub use input::{GestureConfig, Input, Phase, Pointer};
 pub use runner::{App, Frame, run};
 pub use shapes::{Shapes, Styled, View, rgb, rgba};
-pub use input::{GestureConfig, Input, Phase, Pointer};
 pub use tune::{Schema, Tunable, Tuner};
 pub use {egui, glam};

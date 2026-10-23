@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dice",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd apps/dice && trunk serve"],
+      "port": 8766
+    },
+    {
+      "name": "sandbox",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd apps/sandbox && trunk serve"],
+      "port": 8765
+    }
+  ]
+}

@@ -2,7 +2,7 @@
 
 The living plan for rebuilding Dice Merge and Blob Merge in Rust + WebGPU and publishing them on contra-ethos.com. Tick steps as they land, and log decisions at the bottom.
 
-**Current phase: 1, engine minimum (built; awaiting Ethan's phone check).** Next step: Ethan tries the Phase 1 sandbox on his phone (tap, drag, hold, the dev panel). Then phase 2, starting with `crates/dice`.
+**Current phase: 2, Dice Merge (playable; awaiting Ethan's feel pass).** `crates/dice` and `apps/dice` are built; the game is at play.contra-ethos.com/dice/ once pushed. Next step: Ethan plays it on his phone and tunes it in the panel; paste his Copy values into `apps/dice/src/config.rs`. Then phase 3, `crates/blob`.
 
 ## Goal state
 
@@ -50,15 +50,15 @@ Why it's split this way:
 - [x] Frame loop with a fixed simulation step (120 Hz default) and interpolated rendering via `Frame::alpha`; headless snapshots step the same way (`runner.rs`, `headless.rs`).
 - [x] Text: SDF glyph atlas built at startup from Fredoka SemiBold, drawn by the shape shader, so text gets outlines and glow too; digits are tabular (`text.rs`).
 - [x] Dev tuning panel in egui: `Tunable` + `Tuner` (initial / default / current, presets, per-field reset, Copy values as text, saved to localStorage). Open with the dots top right or F1 (`tune.rs`).
-- [ ] Phone check of the Phase 1 sandbox: tap, drag, hold, panel, Copy values.
+- [x] Phone check of the Phase 1 sandbox: tap, drag, hold, panel, Copy values. Ethan's tuned gravity (420) is now the sandbox default.
 
 ### 2. Dice Merge
 The discrete game comes first: it's the cheapest way to prove the spec → code → test loop.
-- [ ] `crates/dice`: entities, the capabilities (Spawn, Rotate, Place, Merge) and every policy, with one test group per policy.
-- [ ] Settling runs as a synchronous fixed-point loop that returns a step timeline for presentation.
-- [ ] `apps/dice`: board, queue, drag-to-place with rotate, merge and gravity animation weighted by mass.
-- [ ] Tunables for every policy constant, board size, gravity on/off and its direction.
-- [ ] Spec open experiment: a toggle so merges converge on the oldest die instead of the youngest.
+- [x] `crates/dice`: entities, the capabilities (Spawn, Rotate, Place, Merge) and every policy, with one test group per policy. All constants in `Rules`; the oldest-survivor experiment is `Rules::survivor`.
+- [x] Settling runs as a synchronous fixed-point loop that returns a step timeline for presentation (`Turn::steps`: Place, Fall, Merge per generation, Spawn, Replace, End).
+- [x] `apps/dice`: board, queue, drag-to-place with rotate, merge and gravity animation weighted by mass. Dice show pips up to 6 and digits from 7. The merge plays as the old build's pulse train: dice leave one at a time along the neighborhood, each landing rings, then the survivor pops. Placing mid-animation skips the rest of the last turn.
+- [x] Tunables for every policy constant, board size, gravity on/off and its direction, plus every timing and look constant (`apps/dice/src/config.rs`).
+- [x] Spec open experiment: a toggle so merges converge on the oldest die instead of the youngest (Rules panel).
 - [ ] Feel pass on the phone against the old build.
 
 ### 3. Blob Merge
@@ -98,3 +98,12 @@ A separate undertaking under the same umbrella. It's plain JS + WGSL today, so j
 | 2026-10-22 | Rendering feedback loop: headless PNG strips for Claude, the live phone link for Ethan, and every look/feel constant in the dev panel. Ethan tunes on the phone and pastes "Copy values" text back; those become the new initials. | Ethan judges feel on a phone; Claude needs to see frames without a browser. |
 | 2026-10-22 | One SDF pipeline for shapes and text; text from a runtime-built distance-field atlas of Fredoka SemiBold (OFL, the old dice display font). | Outlines, glow and any size for free, in one draw call that keeps draw order. The font is a placeholder until the visual design pass. |
 | 2026-10-22 | The egui panel uses the game font, not egui's bundled fonts, and ships in every build for now. | Saves about 2 MB of wasm; Ethan tunes on the deployed build. Gate it out of player builds in phase 4. |
+| 2026-10-22 | Place ages dice by Manhattan distance from the anchor. | For 1–3-cell clusters it's the path distance through the cluster; Chebyshev would make an L's far end and corner tie. |
+| 2026-10-22 | Every Place spawns, the final one included; `End` follows `Spawn` in the timeline. | Supply says each Place removes the head and appends a new cluster, so the queue length is always fixed. |
+| 2026-10-22 | A dead queued cluster is re-rolled from the normal distribution up to 64 times, then falls back to a single die. | Keeps the spawn distribution where possible; a single die fits any empty cell, and a full board ends the game anyway. |
+| 2026-10-22 | `rustfmt.toml`: 120 columns, `use_small_heuristics = "Max"`. | Matches how the engine was already written; `cargo fmt --all` keeps it consistent. |
+| 2026-10-23 | Dice Spawn draws shapes uniformly up to rotation (I and L trominoes equally likely), then turns each a random number of quarter-turns. | Ethan's call over the old build's fixed-orientation odds; spec updated. |
+| 2026-10-23 | Both spawn variety rules are on by default: exactly one pair in every 3-die cluster, no repeated value otherwise. | Ethan's call; spec updated. |
+| 2026-10-23 | Dice show traditional pips up to 6, digits from 7. | Ethan's call. |
+| 2026-10-23 | Placing while a turn still animates jumps that animation to its end. | Rapid play never waits on animation, and the board on screen never disagrees with the rules for long. |
+| 2026-10-23 | The dice app's package is `dice-app` (binary `dice`), since the rules crate is `dice`. | Cargo package names must be unique in a workspace. |

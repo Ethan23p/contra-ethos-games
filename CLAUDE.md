@@ -69,10 +69,10 @@ The workspace layout and the reasoning behind it are in `PLAN.md` (Architecture)
 
 Run these from the repo root unless noted. The toolchain is Rust stable plus the `wasm32-unknown-unknown` target and Trunk (`cargo install --locked trunk`). Trunk fetches a matching `wasm-bindgen` by itself.
 
-- Tests: `cargo test --workspace`. Lint: `cargo clippy --workspace`.
-- Native window: `cargo run -p sandbox`.
-- Headless snapshot: `cargo run -p sandbox -- --snapshot <file.png>` renders a strip of frames at fixed times. Look at it after any visual change.
-- Web dev server: `trunk serve` from `apps/<app>/`. The sandbox serves at http://127.0.0.1:8765; port 8080 belongs to Steam on this machine. Trunk must run from the app's folder, because it can't find the crate from the repo root. Each app's `Trunk.toml` watches `../../crates` too, so engine edits rebuild.
+- Tests: `cargo test --workspace`. Lint: `cargo clippy --workspace --all-targets`. Format: `cargo fmt --all` (120 columns, from `rustfmt.toml`).
+- Native window: `cargo run -p sandbox`, or `cargo run -p dice-app` for Dice Merge.
+- Headless snapshot: `cargo run -p sandbox -- --snapshot <file.png>` renders a strip of frames at fixed times. Look at it after any visual change. Dice: `cargo run -p dice-app -- --snapshot <file.png>` plays a scripted two-step cascade; `--snapshot-drag` shows the drop preview.
+- Web dev server: `trunk serve` from `apps/<app>/`. The sandbox serves at http://127.0.0.1:8765 and dice at :8766; port 8080 belongs to Steam on this machine. Trunk must run from the app's folder, because it can't find the crate from the repo root. Each app's `Trunk.toml` watches `../../crates` too, so engine edits rebuild.
 - Dev panel: tap the three dots top right, or press F1 / backquote. A game exposes tunables by implementing `engine::Tunable` on its config struct (its `Default` is the shipped values) and calling `tuner.ui(ui)` from `App::dev_ui`. "Copy values" gives `id = value` lines; paste Ethan's into the config's `Default` to ship them.
 - Web release build: `trunk build --release` from `apps/<app>/`, written to that app's `dist/`. The phase-1 sandbox is about 2.7 MB of wasm (1.1 MB gzipped), mostly egui; phase 0 without egui was 295 KB.
 - Site build: `bash web/build.sh` builds every app into `target/site/`, which is exactly what Pages serves. Add each new app to the `apps` list there and link it from `web/index.html`.
