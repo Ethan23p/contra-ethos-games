@@ -1,0 +1,6 @@
+[package]
+name = "dice"
+description = "Dice Merge rules: pure Rust, no rendering dependencies."
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
