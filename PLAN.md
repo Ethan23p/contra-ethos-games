@@ -2,7 +2,7 @@
 
 The living plan for rebuilding Dice Merge and Blob Merge in Rust + WebGPU and publishing them on contra-ethos.com. Tick steps as they land, and log decisions at the bottom.
 
-**Current phase: 0, foundations.** Next steps: 0.4 (phone) and 0.5 (deploy), which wait on the hosting decision.
+**Current phase: 0, foundations.** Next step: 0.4, Ethan opens https://play.contra-ethos.com/sandbox/ on his phone once the HTTPS certificate is live. Then phase 1.
 
 ## Goal state
 
@@ -39,8 +39,8 @@ Why it's split this way:
 - [x] 0.1 Toolchain: update Rust, add the `wasm32-unknown-unknown` target, and install Trunk.
 - [x] 0.2 Workspace skeleton: the crates and apps above, all empty, with `cargo test --workspace` green.
 - [x] 0.3 `engine`: a wgpu surface that clears to a colour and draws animated SDF circles, natively and in the browser, with resize and device-pixel-ratio handling. Shown in `apps/sandbox`.
-- [ ] 0.4 Phone check: serve over https (cloudflared tunnel) and confirm it renders on Ethan's phone.
-- [ ] 0.5 Deploy smoke test: put the sandbox's release bundle on the chosen host (see Hosting under Open decisions) and confirm it loads. Ethan approves before anything is pushed.
+- [ ] 0.4 Phone check: Ethan opens https://play.contra-ethos.com/sandbox/ on his phone and confirms it renders.
+- [x] 0.5 Deploy smoke test: a push to `main` builds the site and publishes it to play.contra-ethos.com through GitHub Actions and Pages.
 - [x] 0.6 Headless snapshot: render a frame offscreen to PNG natively, for visual checks.
 - [x] 0.7 Fill in the Commands section of `CLAUDE.md`.
 
@@ -80,7 +80,6 @@ A separate undertaking under the same umbrella. It's plain JS + WGSL today, so j
 
 ## Open decisions
 
-- **Hosting:** Phosphor-Sand deploys by committing straight to its own GitHub Pages subdomain (sand.contra-ethos.com). The same pattern would fit here, e.g. `play.contra-ethos.com` served from this repo. It needs a GitHub repo and a DNS record, both Ethan's call.
 - **Physics:** a custom integrator, ported from the spec, or a crate like `rapier2d`. I lean custom: the forces (Lennard-Jones, a saturating well, springs) are bespoke, and determinism matters.
 - **Rendering feedback loop:** how Ethan reviews visuals and gives feedback. Probably headless PNG strips plus a live phone link for each visual change, with tunables exposed so Ethan can find the right values himself. Settle it during phase 1.
 
@@ -94,4 +93,5 @@ A separate undertaking under the same umbrella. It's plain JS + WGSL today, so j
 | 2026-10-22 | WebGPU only; no WebGL2 fallback. | Ethan doesn't need older browsers, and WebGPU now ships in every major browser. One backend means one set of shaders to tune. |
 | 2026-10-22 | Trunk is the web build tool. | Dev server with rebuild on save, and a static `dist/` that drops into any host. |
 | 2026-10-22 | egui for the dev tuning panel, standardised across both games on the dice schema (initial / default / current per tunable). | Fast to build and works on the web; Ethan already used in-game tuning in both old builds to find good values. |
+| 2026-10-22 | Host at play.contra-ethos.com: GitHub Pages from this repo (public), built by Actions on every push to `main`. | The same pattern as sand.contra-ethos.com; each push puts a build on Ethan's phone with no tunnel. |
 | 2026-10-22 | Everything players see is drawn with our own primitives: no DOM or CSS UI. | Full control over animation and feel; CSS fought the dice build. |

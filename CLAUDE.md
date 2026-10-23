@@ -74,8 +74,10 @@ Run these from the repo root unless noted. The toolchain is Rust stable plus the
 - Headless snapshot: `cargo run -p sandbox -- --snapshot <file.png>` renders a strip of frames at fixed times. Look at it after any visual change.
 - Web dev server: `trunk serve` from `apps/<app>/`. The sandbox serves at http://127.0.0.1:8765; port 8080 belongs to Steam on this machine. Trunk must run from the app's folder, because it can't find the crate from the repo root.
 - Web release build: `trunk build --release` from `apps/<app>/`, written to that app's `dist/`. The phase-0 sandbox came to about 295 KB of wasm plus 78 KB of JS.
-- Phone preview: _tbd_. WebGPU needs https. Options are a cloudflared tunnel, as in `../Phosphor-Sand/serve.ps1`, or pushing to a Pages subdomain, the way sand.contra-ethos.com works.
+- Site build: `bash web/build.sh` builds every app into `target/site/`, which is exactly what Pages serves. Add each new app to the `apps` list there and link it from `web/index.html`.
+- Deploy: every push to `main` runs `.github/workflows/pages.yml` (tests, then the site build, then GitHub Pages), taking about 5 minutes. The site is https://play.contra-ethos.com, with each app at `/<app>/`. This is also how Ethan tries builds on his phone. DNS is a Cloudflare CNAME, `play` → `ethan23p.github.io`, set to DNS only.
 
 Gotchas:
 - wgpu 30 differs from most examples online. `get_current_texture()` returns a `CurrentSurfaceTexture` enum, presenting is `queue.present(frame)`, pipeline layouts and vertex buffers take `Option`s, and the field is `multiview_mask`. When unsure, read the source in `~/.cargo/registry/src/*/wgpu-30.*`.
+- Git Bash rewrites arguments that look like absolute paths, such as `/sandbox/`, into Windows paths. `web/build.sh` sets `MSYS_NO_PATHCONV=1` for Trunk, and keeps `--dist` relative for the same reason.
 - Surfaces use a non-sRGB format on purpose, so colours are authored and blended in sRGB the same way on desktop and on the web.
