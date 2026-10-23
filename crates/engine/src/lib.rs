@@ -5,12 +5,17 @@
 //! this crate grows by adding primitives to [`Shapes`], not by wrapping UI kits.
 
 mod gpu;
+mod input;
 mod runner;
 mod shapes;
+mod text;
+pub mod tune;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod headless;
 
-pub use glam;
 pub use runner::{App, Frame, run};
-pub use shapes::{Circle, Shapes, rgb, rgba};
+pub use shapes::{Shapes, Styled, View, rgb, rgba};
+pub use input::{GestureConfig, Input, Phase, Pointer};
+pub use tune::{Schema, Tunable, Tuner};
+pub use {egui, glam};

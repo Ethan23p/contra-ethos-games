@@ -2,7 +2,7 @@
 
 The living plan for rebuilding Dice Merge and Blob Merge in Rust + WebGPU and publishing them on contra-ethos.com. Tick steps as they land, and log decisions at the bottom.
 
-**Current phase: 0, foundations.** Next step: 0.4, Ethan opens https://play.contra-ethos.com/sandbox/ on his phone once the HTTPS certificate is live. Then phase 1.
+**Current phase: 1, engine minimum (built; awaiting Ethan's phone check).** Next step: Ethan tries the Phase 1 sandbox on his phone (tap, drag, hold, the dev panel). Then phase 2, starting with `crates/dice`.
 
 ## Goal state
 
@@ -39,17 +39,18 @@ Why it's split this way:
 - [x] 0.1 Toolchain: update Rust, add the `wasm32-unknown-unknown` target, and install Trunk.
 - [x] 0.2 Workspace skeleton: the crates and apps above, all empty, with `cargo test --workspace` green.
 - [x] 0.3 `engine`: a wgpu surface that clears to a colour and draws animated SDF circles, natively and in the browser, with resize and device-pixel-ratio handling. Shown in `apps/sandbox`.
-- [ ] 0.4 Phone check: Ethan opens https://play.contra-ethos.com/sandbox/ on his phone and confirms it renders.
+- [x] 0.4 Phone check: Ethan opens https://play.contra-ethos.com/sandbox/ on his phone and confirms it renders.
 - [x] 0.5 Deploy smoke test: a push to `main` builds the site and publishes it to play.contra-ethos.com through GitHub Actions and Pages.
 - [x] 0.6 Headless snapshot: render a frame offscreen to PNG natively, for visual checks.
 - [x] 0.7 Fill in the Commands section of `CLAUDE.md`.
 
 ### 1. Engine minimum
-- [ ] Instanced shape renderer: circles and rounded rects with fill, outline, glow; colour and alpha per instance.
-- [ ] Unified pointer input: mouse and touch, tap, drag, hold, mapped to world coordinates.
-- [ ] Frame loop with a fixed simulation step and interpolated rendering.
-- [ ] Text: glyph atlas or SDF font for numbers on dice and blobs; labels can wait.
-- [ ] Dev tuning panel in egui, bound to each game's config. One config schema for both games (initial / default / current per tunable, plus presets), modelled on the old dice Tuning panel and the old blob config list.
+- [x] Instanced shape renderer: circles and rounded rects with fill, outline, glow, rotation and scale; colour and alpha per instance; one pass, one draw call (`shapes.rs`, `shapes.wgsl`).
+- [x] Unified pointer input: mouse and touch, tap, drag, hold, mapped to world coordinates through `View` (`input.rs`).
+- [x] Frame loop with a fixed simulation step (120 Hz default) and interpolated rendering via `Frame::alpha`; headless snapshots step the same way (`runner.rs`, `headless.rs`).
+- [x] Text: SDF glyph atlas built at startup from Fredoka SemiBold, drawn by the shape shader, so text gets outlines and glow too; digits are tabular (`text.rs`).
+- [x] Dev tuning panel in egui: `Tunable` + `Tuner` (initial / default / current, presets, per-field reset, Copy values as text, saved to localStorage). Open with the dots top right or F1 (`tune.rs`).
+- [ ] Phone check of the Phase 1 sandbox: tap, drag, hold, panel, Copy values.
 
 ### 2. Dice Merge
 The discrete game comes first: it's the cheapest way to prove the spec → code → test loop.
@@ -81,7 +82,6 @@ A separate undertaking under the same umbrella. It's plain JS + WGSL today, so j
 ## Open decisions
 
 - **Physics:** a custom integrator, ported from the spec, or a crate like `rapier2d`. I lean custom: the forces (Lennard-Jones, a saturating well, springs) are bespoke, and determinism matters.
-- **Rendering feedback loop:** how Ethan reviews visuals and gives feedback. Probably headless PNG strips plus a live phone link for each visual change, with tunables exposed so Ethan can find the right values himself. Settle it during phase 1.
 
 ## Decision log
 
@@ -95,3 +95,6 @@ A separate undertaking under the same umbrella. It's plain JS + WGSL today, so j
 | 2026-10-22 | egui for the dev tuning panel, standardised across both games on the dice schema (initial / default / current per tunable). | Fast to build and works on the web; Ethan already used in-game tuning in both old builds to find good values. |
 | 2026-10-22 | Host at play.contra-ethos.com: GitHub Pages from this repo (public), built by Actions on every push to `main`. | The same pattern as sand.contra-ethos.com; each push puts a build on Ethan's phone with no tunnel. |
 | 2026-10-22 | Everything players see is drawn with our own primitives: no DOM or CSS UI. | Full control over animation and feel; CSS fought the dice build. |
+| 2026-10-22 | Rendering feedback loop: headless PNG strips for Claude, the live phone link for Ethan, and every look/feel constant in the dev panel. Ethan tunes on the phone and pastes "Copy values" text back; those become the new initials. | Ethan judges feel on a phone; Claude needs to see frames without a browser. |
+| 2026-10-22 | One SDF pipeline for shapes and text; text from a runtime-built distance-field atlas of Fredoka SemiBold (OFL, the old dice display font). | Outlines, glow and any size for free, in one draw call that keeps draw order. The font is a placeholder until the visual design pass. |
+| 2026-10-22 | The egui panel uses the game font, not egui's bundled fonts, and ships in every build for now. | Saves about 2 MB of wasm; Ethan tunes on the deployed build. Gate it out of player builds in phase 4. |

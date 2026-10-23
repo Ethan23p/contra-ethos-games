@@ -7,7 +7,7 @@ use glam::Vec2;
 
 use crate::gpu::request_device;
 use crate::runner::{App, Frame};
-use crate::shapes::{ShapeRenderer, Shapes};
+use crate::shapes::{ShapeRenderer, Shapes, View};
 
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 
@@ -16,15 +16,24 @@ const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 pub fn snapshot_strip<A: App>(app: &mut A, width: u32, height: u32, times: &[f32], path: &Path) {
     let instance = wgpu::Instance::default();
     let (_adapter, device, queue) = pollster::block_on(request_device(&instance, None));
-    let mut renderer = ShapeRenderer::new(&device, FORMAT);
+    let mut renderer = ShapeRenderer::new(&device, &queue, FORMAT);
 
     let mut strip = image::RgbaImage::new(width * times.len() as u32, height);
     let mut shapes = Shapes::default();
-    let mut last = 0.0;
+    // Same fixed steps as the live loop, so a snapshot shows exactly what a
+    // player would see at that moment.
+    let step = app.step();
+    let (mut last, mut simulated) = (0.0, 0.0);
     for (i, &time) in times.iter().enumerate() {
-        let frame = Frame { time, dt: time - last, size: Vec2::new(width as f32, height as f32), scale: 1.0 };
+        while simulated + step <= time {
+            app.update(step);
+            simulated += step;
+        }
+        let size = Vec2::new(width as f32, height as f32);
+        let frame = Frame { time, dt: time - last, size, scale: 1.0, alpha: (time - simulated) / step };
         last = time;
         shapes.clear_shapes();
+        shapes.view = View::PIXELS;
         app.frame(&frame, &mut shapes);
         let pixels = render_once(&device, &queue, &mut renderer, &shapes, width, height);
         let tile = image::RgbaImage::from_raw(width, height, pixels).expect("frame size");

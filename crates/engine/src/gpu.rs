@@ -58,7 +58,7 @@ impl Graphics {
         }
         surface.configure(&device, &config);
 
-        let shapes = ShapeRenderer::new(&device, config.format);
+        let shapes = ShapeRenderer::new(&device, &queue, config.format);
         Self { window, surface, device, queue, config, shapes }
     }
 

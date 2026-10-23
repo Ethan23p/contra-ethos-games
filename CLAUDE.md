@@ -72,12 +72,15 @@ Run these from the repo root unless noted. The toolchain is Rust stable plus the
 - Tests: `cargo test --workspace`. Lint: `cargo clippy --workspace`.
 - Native window: `cargo run -p sandbox`.
 - Headless snapshot: `cargo run -p sandbox -- --snapshot <file.png>` renders a strip of frames at fixed times. Look at it after any visual change.
-- Web dev server: `trunk serve` from `apps/<app>/`. The sandbox serves at http://127.0.0.1:8765; port 8080 belongs to Steam on this machine. Trunk must run from the app's folder, because it can't find the crate from the repo root.
-- Web release build: `trunk build --release` from `apps/<app>/`, written to that app's `dist/`. The phase-0 sandbox came to about 295 KB of wasm plus 78 KB of JS.
+- Web dev server: `trunk serve` from `apps/<app>/`. The sandbox serves at http://127.0.0.1:8765; port 8080 belongs to Steam on this machine. Trunk must run from the app's folder, because it can't find the crate from the repo root. Each app's `Trunk.toml` watches `../../crates` too, so engine edits rebuild.
+- Dev panel: tap the three dots top right, or press F1 / backquote. A game exposes tunables by implementing `engine::Tunable` on its config struct (its `Default` is the shipped values) and calling `tuner.ui(ui)` from `App::dev_ui`. "Copy values" gives `id = value` lines; paste Ethan's into the config's `Default` to ship them.
+- Web release build: `trunk build --release` from `apps/<app>/`, written to that app's `dist/`. The phase-1 sandbox is about 2.7 MB of wasm (1.1 MB gzipped), mostly egui; phase 0 without egui was 295 KB.
 - Site build: `bash web/build.sh` builds every app into `target/site/`, which is exactly what Pages serves. Add each new app to the `apps` list there and link it from `web/index.html`.
 - Deploy: every push to `main` runs `.github/workflows/pages.yml` (tests, then the site build, then GitHub Pages), taking about 5 minutes. The site is https://play.contra-ethos.com, with each app at `/<app>/`. This is also how Ethan tries builds on his phone. DNS is a Cloudflare CNAME, `play` → `ethan23p.github.io`, set to DNS only.
 
 Gotchas:
 - wgpu 30 differs from most examples online. `get_current_texture()` returns a `CurrentSurfaceTexture` enum, presenting is `queue.present(frame)`, pipeline layouts and vertex buffers take `Option`s, and the field is `multiview_mask`. When unsure, read the source in `~/.cargo/registry/src/*/wgpu-30.*`.
 - Git Bash rewrites arguments that look like absolute paths, such as `/sandbox/`, into Windows paths. `web/build.sh` sets `MSYS_NO_PATHCONV=1` for Trunk, and keeps `--dist` relative for the same reason.
+- epaint panics in debug builds if a `TexturesDelta` is dropped without `clear()`; the runner clears it after applying.
+- In the in-app browser, screenshots after a click on the canvas can come back zoomed on the focused canvas. It's the screenshot tool, not the render; check with `getBoundingClientRect` before chasing it.
 - Surfaces use a non-sRGB format on purpose, so colours are authored and blended in sRGB the same way on desktop and on the web.

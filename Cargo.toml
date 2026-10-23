@@ -18,6 +18,10 @@ bytemuck = { version = "1", features = ["derive"] }
 glam = { version = "0.34", features = ["bytemuck"] }
 log = "0.4"
 web-time = "1"
+fontdue = "0.9"
+egui = { version = "0.37", default-features = false }
+egui-wgpu = { version = "0.37", default-features = false }
+egui-winit = { version = "0.37", default-features = false }
 
 # native only
 pollster = "1"
@@ -27,7 +31,7 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 # web only
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
-web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlCanvasElement"] }
+web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlCanvasElement", "Storage", "Navigator", "Clipboard"] }
 console_error_panic_hook = "0.1"
 console_log = "1"
 
