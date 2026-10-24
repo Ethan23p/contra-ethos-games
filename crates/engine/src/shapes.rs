@@ -51,6 +51,13 @@ impl View {
         Self { scale, offset: viewport * 0.5 }
     }
 
+    /// Fits a world `size` inside the pixel rectangle at `min` of `area`,
+    /// with the world point `center` at the rectangle's centre.
+    pub fn fit_area(size: Vec2, center: Vec2, min: Vec2, area: Vec2) -> Self {
+        let scale = (area / size).min_element();
+        Self { scale, offset: min + area * 0.5 - center * scale }
+    }
+
     pub fn to_screen(&self, world: Vec2) -> Vec2 {
         self.offset + world * self.scale
     }

@@ -35,6 +35,13 @@ pub struct Frame {
     pub alpha: f32,
 }
 
+impl Frame {
+    /// The viewport's anchors and units, for placing UI.
+    pub fn screen(&self) -> crate::Screen {
+        crate::Screen::new(self.size, self.scale)
+    }
+}
+
 pub trait App: 'static {
     /// Length of one simulation step, seconds.
     fn step(&self) -> f32 {
@@ -61,6 +68,12 @@ pub trait App: 'static {
 
     /// Extra controls at the top of the panel's option island ("New game", say).
     fn config_actions(&mut self, _ui: &mut egui::Ui) {}
+
+    /// Whether the pinned-cards widget sits at the top of the screen, on the
+    /// button's side, instead of just above the button.
+    fn config_widget_top(&self) -> bool {
+        false
+    }
 }
 
 /// The longest stretch one frame may simulate, so a stall (a breakpoint, a tab

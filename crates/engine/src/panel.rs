@@ -4,18 +4,22 @@
 //! The button stays put whether the panel is open or not, so it toggles in
 //! place; a long press moves it to the other bottom corner. The panel's option
 //! island sits in the corner opposite the button. With nothing pinned, the
-//! button is the only thing over the game.
+//! button is the only thing over the game. Sizes are in ems (see `screen.rs`).
 
 use egui::{Align2, Color32, Context, Pos2, Rect, Ui, vec2};
 
 use crate::runner::App;
+use crate::screen::EM;
 use crate::tune::storage;
 
-const BUTTON: f32 = 48.0;
-const MARGIN: f32 = 12.0;
+const BUTTON: f32 = 3.0 * EM;
+const MARGIN: f32 = 0.75 * EM;
 const LONG_PRESS: f64 = 0.5;
-/// Narrower than this (logical px), the panel takes the whole width.
-const PHONE: f32 = 640.0;
+/// Narrower than this, the panel takes the whole width.
+const PHONE: f32 = 40.0 * EM;
+const PANEL_WIDTH: f32 = 26.0 * EM;
+const ISLAND_WIDTH: f32 = 22.0 * EM;
+const WIDGET_WIDTH: f32 = 15.0 * EM;
 
 pub(crate) struct Panel {
     pub open: bool,
@@ -54,7 +58,7 @@ impl Panel {
         ctx.all_styles_mut(|style| {
             use egui::{FontId, TextStyle};
             style.visuals = egui::Visuals::dark();
-            style.spacing.interact_size.y = 30.0;
+            style.spacing.interact_size.y = 1.875 * EM;
             style.spacing.button_padding = vec2(10.0, 6.0);
             style.spacing.item_spacing = vec2(8.0, 6.0);
             style.spacing.slider_rail_height = 6.0;
@@ -90,7 +94,7 @@ impl Panel {
                 .rect_filled(screen, 0.0, Color32::from_black_alpha(90));
 
             let phone = screen.width() < PHONE;
-            let width = if phone { screen.width() } else { 420.0 };
+            let width = if phone { screen.width() } else { PANEL_WIDTH };
             let x = if phone || !self.right { screen.left() } else { screen.right() - width };
             // Side by side with the island when wide; above it on a phone.
             let below = if phone { self.island_height.max(BUTTON) } else { BUTTON };
@@ -111,7 +115,7 @@ impl Panel {
                     });
                 });
 
-            let island_width = (screen.width() - BUTTON - MARGIN * 3.0).min(360.0);
+            let island_width = (screen.width() - BUTTON - MARGIN * 3.0).min(ISLAND_WIDTH);
             let island = egui::Area::new(egui::Id::unique("config island"))
                 .anchor(opposite, vec2(-side * MARGIN, -MARGIN))
                 .order(egui::Order::Foreground)
@@ -131,9 +135,14 @@ impl Panel {
                 });
             self.island_height = island.response.rect.height();
         } else if app.config().is_some_and(|c| c.has_pins()) {
-            let width = (screen.width() - MARGIN * 2.0).min(320.0);
+            let width = (screen.width() - MARGIN * 2.0).min(WIDGET_WIDTH);
+            let (anchor, offset) = if app.config_widget_top() {
+                (if self.right { Align2::RIGHT_TOP } else { Align2::LEFT_TOP }, vec2(-side * MARGIN, MARGIN))
+            } else {
+                (corner, vec2(-side * MARGIN, -(MARGIN * 2.0 + BUTTON)))
+            };
             let widget = egui::Area::new(egui::Id::unique("config widget"))
-                .anchor(corner, vec2(-side * MARGIN, -(MARGIN * 2.0 + BUTTON)))
+                .anchor(anchor, offset)
                 .order(egui::Order::Foreground)
                 .show(ctx, |ui| {
                     egui::Frame::new()
@@ -187,9 +196,9 @@ impl Panel {
         p.circle_filled(c, BUTTON * 0.5, Color32::from_black_alpha(if lit { 170 } else { 90 }));
         let ink = Color32::from_white_alpha(if lit { 230 } else { 120 });
         for (i, knob) in [(-1.0, 0.35), (0.0, -0.3), (1.0, 0.1)] {
-            let y = c.y + i * 7.0;
-            p.line_segment([Pos2::new(c.x - 11.0, y), Pos2::new(c.x + 11.0, y)], egui::Stroke::new(1.6, ink));
-            p.circle_filled(Pos2::new(c.x + knob * 11.0, y), 2.8, ink);
+            let (y, half) = (c.y + i * BUTTON * 0.15, BUTTON * 0.23);
+            p.line_segment([Pos2::new(c.x - half, y), Pos2::new(c.x + half, y)], egui::Stroke::new(1.6, ink));
+            p.circle_filled(Pos2::new(c.x + knob * half, y), BUTTON * 0.06, ink);
         }
     }
 }

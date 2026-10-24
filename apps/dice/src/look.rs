@@ -2,7 +2,7 @@
 
 use dice::Pos;
 use engine::glam::Vec2;
-use engine::{Shapes, rgb, rgba};
+use engine::{Anchor, Screen, Shapes, View, rgb, rgba};
 
 use crate::config::Config;
 
@@ -14,8 +14,12 @@ pub const TEXT: u32 = 0xf4f1ec;
 pub const ACCENT: u32 = 0x5b8ef2;
 pub const RED: u32 = 0xd9564f;
 
-/// The world: 100 units wide, 170 high, centred on the origin.
-pub const WORLD: Vec2 = Vec2::new(100.0, 170.0);
+/// The play area in world units: the board, the piece and the queue. It's
+/// fitted into the screen below the score band; the HUD is placed on the
+/// screen itself (see `Hud`).
+pub const PLAY: Vec2 = Vec2::new(100.0, 152.0);
+/// The world point at the play area's centre.
+pub const PLAY_CENTER: Vec2 = Vec2::new(0.0, 13.0);
 const BOARD_SIDE: f32 = 90.0;
 const BOARD_CENTER: Vec2 = Vec2::new(0.0, -15.0);
 const BOARD_PAD: f32 = 1.5;
@@ -161,4 +165,47 @@ pub fn smooth(t: f32) -> f32 {
 /// Text colour helper for the HUD.
 pub fn text_color(alpha: f32) -> [f32; 4] {
     rgba(TEXT, alpha)
+}
+
+/// Where the HUD goes: anchored to the screen, sized in ems, with the play
+/// area fitted into what's left.
+pub struct Hud {
+    pub screen: Screen,
+    pub view: View,
+}
+
+impl Hud {
+    /// Height of the score band at the top, in ems.
+    const BAND: f32 = 5.5;
+
+    pub fn new(screen: Screen) -> Self {
+        let top = screen.em(Self::BAND);
+        let area = screen.size - Vec2::new(0.0, top + screen.em(0.5));
+        Self { screen, view: View::fit_area(PLAY, PLAY_CENTER, Vec2::new(0.0, top), area) }
+    }
+
+    /// Ems as world units, for text drawn in the play area.
+    pub fn em_world(&self, n: f32) -> f32 {
+        self.screen.em(n) / self.view.scale
+    }
+
+    pub fn score(&self, s: &mut Shapes, score: f64, best: f64) {
+        let sc = &self.screen;
+        s.view = View::PIXELS;
+        s.text(sc.at(Anchor::TOP, Vec2::new(0.0, sc.em(2.4))), sc.em(2.75), &format!("{}", score.round()), rgb(ACCENT));
+        s.text(sc.at(Anchor::TOP, Vec2::new(0.0, sc.em(4.4))), sc.em(0.8), &format!("BEST {}", best.round()), rgb(DIM));
+        s.view = self.view;
+    }
+
+    pub fn game_over(&self, s: &mut Shapes, score: f64) {
+        let sc = &self.screen;
+        s.view = View::PIXELS;
+        s.rect(sc.at(Anchor::CENTER, Vec2::ZERO), sc.size, rgba(0x050403, 0.82));
+        let c = self.view.to_screen(Vec2::new(0.0, -10.0));
+        s.rounded_rect(c, Vec2::new(sc.em(15.0), sc.em(9.5)), sc.em(1.0), rgb(0x16140f)).outline(sc.em(0.1), rgb(LINE));
+        s.text(c - Vec2::new(0.0, sc.em(2.6)), sc.em(1.6), "Game over", text_color(1.0));
+        s.text(c + Vec2::new(0.0, sc.em(0.2)), sc.em(2.2), &format!("{}", score.round()), rgb(ACCENT));
+        s.text(c + Vec2::new(0.0, sc.em(2.9)), sc.em(0.8), "TAP TO PLAY AGAIN", rgb(DIM));
+        s.view = self.view;
+    }
 }

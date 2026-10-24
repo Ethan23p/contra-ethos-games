@@ -16,6 +16,11 @@
 
 use egui::{Color32, RichText, Ui};
 
+use crate::screen::EM;
+
+/// Height of a touchable row in the panel.
+const ROW: f32 = 1.875 * EM;
+
 /// A config the panel can tune.
 pub trait Tunable: Clone + Default + 'static {
     /// Names the saved profiles and pins, e.g. "dice". Change it to discard old saves.
@@ -388,17 +393,17 @@ impl<C: Tunable> Config for Tuner<C> {
         let name = self.profiles[self.selected].name.clone();
         let builtin = self.profiles[self.selected].builtin;
         let marker = if self.picking { "close" } else { "change" };
-        if ui.add(egui::Button::new(format!("Profile: {name}   ({marker})")).min_size([width, 32.0].into())).clicked() {
+        if ui.add(egui::Button::new(format!("Profile: {name}   ({marker})")).min_size([width, ROW].into())).clicked() {
             self.picking = !self.picking;
         }
 
-        let half = [(width - ui.spacing().item_spacing.x - 44.0) / 2.0, 30.0];
+        let half = [(width - ui.spacing().item_spacing.x - 2.75 * EM) / 2.0, ROW];
         let Self { fields, pinned, current, profiles, selected, .. } = self;
         let profile = &mut profiles[*selected];
         let any_pins = pinned.iter().any(|&p| p);
         let mut note = None;
         ui.horizontal(|ui| {
-            ui.add_sized([40.0, 30.0], egui::Label::new("Load"));
+            ui.add_sized([2.5 * EM, ROW], egui::Label::new("Load"));
             if ui.add(egui::Button::new("All").min_size(half.into())).clicked() {
                 Self::copy_values(fields, pinned, &mut profile.values, current, false);
                 note = Some(format!("Loaded \"{}\".", profile.name));
@@ -409,7 +414,7 @@ impl<C: Tunable> Config for Tuner<C> {
             }
         });
         ui.horizontal(|ui| {
-            ui.add_sized([40.0, 30.0], egui::Label::new("Save"));
+            ui.add_sized([2.5 * EM, ROW], egui::Label::new("Save"));
             if ui.add_enabled(!builtin, egui::Button::new("All").min_size(half.into())).clicked() {
                 Self::copy_values(fields, pinned, current, &mut profile.values, false);
                 note = Some(format!("Saved into \"{}\".", profile.name));
@@ -431,7 +436,7 @@ impl<C: Tunable> Config for Tuner<C> {
         let is_default = self.startup.as_deref() == Some(name.as_str());
         ui.horizontal(|ui| {
             let label = if is_default { "Default (copy again)" } else { "Make default" };
-            if ui.add(egui::Button::new(label).min_size([width, 30.0].into())).clicked() {
+            if ui.add(egui::Button::new(label).min_size([width, ROW].into())).clicked() {
                 let p = &mut self.profiles[self.selected];
                 p.keep = true;
                 let text = values_text(&self.fields, &mut p.values);
@@ -462,7 +467,7 @@ impl<C: Tunable> Config for Tuner<C> {
         egui::ScrollArea::vertical().max_height(ui.ctx().content_rect().height() * 0.5).show(ui, |ui| {
             for (i, field) in fields.iter().enumerate() {
                 if pinned[i] {
-                    card(ui, field, current, None, None);
+                    compact(ui, field, current);
                 }
             }
         });
@@ -523,8 +528,51 @@ fn card<C>(
     out
 }
 
+/// A pinned field in the floating widget: one row of name, value and nudges,
+/// so it covers as little of the game as possible.
+fn compact<C>(ui: &mut Ui, field: &Field<C>, current: &mut C) {
+    let nudge = |ui: &mut Ui, text: &str| ui.add(egui::Button::new(text).min_size([ROW, ROW].into())).clicked();
+    ui.horizontal(|ui| {
+        ui.label(RichText::new(field.label).small());
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| match &field.control {
+            Control::Float { get, min, max, step } => {
+                let v = get(current);
+                if nudge(ui, "+") {
+                    *v = (((*v + step) / step).round() * step).min(*max);
+                }
+                ui.label(RichText::new(field.show(*v as f64)).color(ACCENT));
+                if nudge(ui, "-") {
+                    *v = (((*v - step) / step).round() * step).max(*min);
+                }
+            }
+            Control::Int { get, min, max } => {
+                let v = get(current);
+                if nudge(ui, "+") {
+                    *v = (*v + 1).min(*max);
+                }
+                ui.label(RichText::new(field.show(*v as f64)).color(ACCENT));
+                if nudge(ui, "-") {
+                    *v = (*v - 1).max(*min);
+                }
+            }
+            Control::Toggle { get } => {
+                let v = get(current);
+                if ui.add(egui::Button::new(if *v { "On" } else { "Off" }).min_size([2.0 * ROW, ROW].into())).clicked() {
+                    *v = !*v;
+                }
+            }
+            Control::Choice { get, options } => {
+                let v = get(current);
+                if ui.add(egui::Button::new(options[*v]).min_size([2.0 * ROW, ROW].into())).clicked() {
+                    *v = (*v + 1) % options.len();
+                }
+            }
+        });
+    });
+}
+
 fn controls<C>(ui: &mut Ui, field: &Field<C>, current: &mut C) {
-    let button = |ui: &mut Ui, text: &str| ui.add(egui::Button::new(text).min_size([30.0, 28.0].into())).clicked();
+    let button = |ui: &mut Ui, text: &str| ui.add(egui::Button::new(text).min_size([ROW, ROW].into())).clicked();
     match &field.control {
         Control::Float { get, min, max, step } => {
             ui.horizontal(|ui| {
@@ -534,7 +582,7 @@ fn controls<C>(ui: &mut Ui, field: &Field<C>, current: &mut C) {
                 }
                 let (lo, hi) = (field.show(*min as f64), field.show(*max as f64));
                 ui.label(RichText::new(lo.split(' ').next().unwrap_or("")).small().color(DIM));
-                ui.spacing_mut().slider_width = (ui.available_width() - 90.0).max(60.0);
+                ui.spacing_mut().slider_width = (ui.available_width() - 5.5 * EM).max(4.0 * EM);
                 ui.add(egui::Slider::new(v, *min..=*max).step_by(*step as f64).show_value(false));
                 ui.label(RichText::new(hi.split(' ').next().unwrap_or("")).small().color(DIM));
                 if button(ui, "+") {
@@ -550,7 +598,7 @@ fn controls<C>(ui: &mut Ui, field: &Field<C>, current: &mut C) {
                     *v -= 1;
                 }
                 ui.label(RichText::new(min.to_string()).small().color(DIM));
-                ui.spacing_mut().slider_width = (ui.available_width() - 90.0).max(60.0);
+                ui.spacing_mut().slider_width = (ui.available_width() - 5.5 * EM).max(4.0 * EM);
                 ui.add(egui::Slider::new(v, *min..=*max).show_value(false));
                 ui.label(RichText::new(max.to_string()).small().color(DIM));
                 if button(ui, "+") {
@@ -579,7 +627,7 @@ fn controls<C>(ui: &mut Ui, field: &Field<C>, current: &mut C) {
 
 /// A thumbtack: filled when pinned.
 fn pin_button(ui: &mut Ui, pinned: bool) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size([30.0, 28.0].into(), egui::Sense::click());
+    let (rect, response) = ui.allocate_exact_size([ROW, ROW].into(), egui::Sense::click());
     let color = if pinned { ACCENT } else { DIM };
     let p = ui.painter();
     let c = rect.center();

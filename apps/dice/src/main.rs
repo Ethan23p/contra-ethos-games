@@ -248,7 +248,8 @@ impl App for DiceApp {
         self.sync_rules();
         let c = &self.tuner.current;
         if let Hand::Returning { pos, vel, .. } = &mut self.hand {
-            let accel = -c.snap_stiffness * (*pos - HEAD_SLOT) - c.snap_damping * *vel;
+            let (stiffness, damping) = c.snap_spring();
+            let accel = -stiffness * (*pos - HEAD_SLOT) - damping * *vel;
             *vel += accel * dt;
             *pos += *vel * dt;
             if (*pos - HEAD_SLOT).length() < 0.05 && vel.length() < 0.5 {
@@ -262,14 +263,13 @@ impl App for DiceApp {
         let c = self.tuner.current.clone();
         let now = self.time;
         s.clear = rgb(BG);
-        self.view = View::fit(WORLD, f.size);
+        let hud = Hud::new(f.screen());
+        self.view = hud.view;
         s.view = self.view;
         let layout = self.layout();
         let die = layout.die(&c);
 
-        // Score.
-        s.text(Vec2::new(0.0, -74.5), 11.0, &format!("{}", self.game.score().round()), rgb(ACCENT));
-        s.text(Vec2::new(0.0, -65.0), 2.6, &format!("BEST {}", self.best.round()), rgb(DIM));
+        hud.score(s, self.game.score(), self.best);
 
         layout.draw(s);
 
@@ -326,7 +326,9 @@ impl App for DiceApp {
                             } else {
                                 peak + (1.0 - peak) * smooth((k - 0.45) / 0.55)
                             };
-                            glow = (1.0 - k) * (c.glow * (1.0 + 0.3 * (impact - 1.0)));
+                            // Impact grows exponentially with value; past 4 the
+                            // glow would swamp the board.
+                            glow = (1.0 - k) * c.glow * (1.0 + 0.3 * (impact.min(4.0) - 1.0));
                         }
                     }
                     _ => {}
@@ -374,7 +376,7 @@ impl App for DiceApp {
         }
 
         // Hint and queue.
-        s.text(Vec2::new(0.0, 37.0), 2.4, "DRAG TO PLACE · TAP TO ROTATE", rgb(DIM));
+        s.text(Vec2::new(0.0, 37.0), hud.em_world(0.75), "DRAG TO PLACE · TAP TO ROTATE", rgb(DIM));
         let entrance = ease_out((now - self.entered) / (c.entrance_ms / 1000.0).max(1e-3));
         let enter_scale = c.entrance_scale + (1.0 - c.entrance_scale) * entrance;
         let queue = self.game.queue();
@@ -400,11 +402,7 @@ impl App for DiceApp {
 
         // Game over.
         if self.game.is_over() && !self.player.busy() {
-            s.rect(Vec2::ZERO, WORLD * 2.0, rgba(0x050403, 0.82));
-            s.rounded_rect(Vec2::new(0.0, -10.0), Vec2::new(64.0, 40.0), 4.0, rgb(0x16140f)).outline(0.4, rgb(LINE));
-            s.text(Vec2::new(0.0, -20.0), 6.5, "Game over", text_color(1.0));
-            s.text(Vec2::new(0.0, -9.0), 9.0, &format!("{}", self.game.score().round()), rgb(ACCENT));
-            s.text(Vec2::new(0.0, 2.5), 2.6, "TAP TO PLAY AGAIN", rgb(DIM));
+            hud.game_over(s, self.game.score());
         }
     }
 
@@ -412,8 +410,15 @@ impl App for DiceApp {
         Some(&mut self.tuner)
     }
 
+    fn config_widget_top(&self) -> bool {
+        true
+    }
+
     fn config_actions(&mut self, ui: &mut engine::egui::Ui) {
-        if ui.add(engine::egui::Button::new("New game").min_size([ui.available_width(), 30.0].into())).clicked() {
+        if ui
+            .add(engine::egui::Button::new("New game").min_size([ui.available_width(), 1.875 * engine::EM].into()))
+            .clicked()
+        {
             self.new_game();
         }
     }

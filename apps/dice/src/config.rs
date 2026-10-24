@@ -52,8 +52,8 @@ pub struct Config {
     // Dragging.
     pub lift: f32,
     pub lift_ms: f32,
-    pub snap_stiffness: f32,
-    pub snap_damping: f32,
+    pub snap_ms: f32,
+    pub snap_bounce: f32,
     pub shake: f32,
     pub shake_ms: f32,
     pub entrance_scale: f32,
@@ -106,8 +106,8 @@ impl Default for Config {
             glow: 2.0,
             lift: 1.5,
             lift_ms: 150.0,
-            snap_stiffness: 785.0,
-            snap_damping: 95.0,
+            snap_ms: 440.0,
+            snap_bounce: 0.0,
             shake: 1.0,
             shake_ms: 220.0,
             entrance_scale: 0.85,
@@ -144,16 +144,21 @@ impl Tunable for Config {
             .int("max_value", "Highest spawned value", "", 2..=12, |c| &mut c.max_value)
             .toggle("no_repeat", "No repeated value in a cluster", |c| &mut c.no_repeat)
             .toggle("one_pair", "3 dice: exactly one pair", |c| &mut c.one_pair);
+        // Durations scale with the dice's mass, which grows exponentially with
+        // value, so each mass-scaled duration has a cap: without one a value-12
+        // piece would take over a second to turn.
         s.group("Weight")
             .float("mass_exponent", "Mass → feel exponent", "", -1.0..=2.0, 0.05, |c| &mut c.mass_exponent);
         s.group("Rotation")
-            .float("rotate_ms", "Rotate duration", "ms", 0.0..=1000.0, 10.0, |c| &mut c.rotate_ms)
-            .float("rotate_max_ms", "Rotate duration cap", "ms", 0.0..=2000.0, 10.0, |c| &mut c.rotate_max_ms)
+            .float("rotate_ms", "Quarter turn, lightest piece", "ms", 0.0..=1000.0, 10.0, |c| &mut c.rotate_ms)
+            .float("rotate_max_ms", "Quarter turn cap (heavy pieces)", "ms", 0.0..=2000.0, 10.0, |c| {
+                &mut c.rotate_max_ms
+            })
             .float("spin_ms", "Single-die spin", "ms", 0.0..=2000.0, 10.0, |c| &mut c.spin_ms);
         s.group("Place and fall")
             .float("place_ms", "Drop settle", "ms", 0.0..=1000.0, 10.0, |c| &mut c.place_ms)
-            .float("hop_ms", "Hop per cell", "ms", 0.0..=1000.0, 10.0, |c| &mut c.hop_ms)
-            .float("hop_max_ms", "Hop cap", "ms", 0.0..=2000.0, 10.0, |c| &mut c.hop_max_ms)
+            .float("hop_ms", "Hop per cell, lightest die", "ms", 0.0..=1000.0, 10.0, |c| &mut c.hop_ms)
+            .float("hop_max_ms", "Hop per cell cap (heavy dice)", "ms", 0.0..=2000.0, 10.0, |c| &mut c.hop_max_ms)
             .float("settle_beat_ms", "Pause between waves", "ms", 0.0..=1000.0, 10.0, |c| &mut c.settle_beat_ms);
         s.group("Merge pulse")
             .float("beat_ms", "Time between departures", "ms", 10.0..=600.0, 5.0, |c| &mut c.beat_ms)
@@ -172,8 +177,8 @@ impl Tunable for Config {
         s.group("Drag")
             .float("lift", "Lift above finger", "cells", 0.0..=4.0, 0.1, |c| &mut c.lift)
             .float("lift_ms", "Lift duration", "ms", 0.0..=1000.0, 10.0, |c| &mut c.lift_ms)
-            .float("snap_stiffness", "Snapback stiffness", "", 0.0..=4000.0, 5.0, |c| &mut c.snap_stiffness)
-            .float("snap_damping", "Snapback damping", "", 0.0..=400.0, 1.0, |c| &mut c.snap_damping)
+            .float("snap_ms", "Snapback time", "ms", 50.0..=2000.0, 10.0, |c| &mut c.snap_ms)
+            .float("snap_bounce", "Snapback bounce", "", 0.0..=1.0, 0.05, |c| &mut c.snap_bounce)
             .float("shake", "Rejected shake", "u", 0.0..=6.0, 0.1, |c| &mut c.shake)
             .float("shake_ms", "Shake duration", "ms", 0.0..=1000.0, 10.0, |c| &mut c.shake_ms)
             .float("entrance_scale", "New piece start scale", "×", 0.0..=2.0, 0.01, |c| &mut c.entrance_scale)
@@ -206,6 +211,15 @@ impl Config {
     /// The one place mass turns into duration or intensity: 1 for a value-1 die.
     pub fn weight(&self, value: u32) -> f32 {
         (self.base.powi(value as i32 - 1)).powf(self.mass_exponent)
+    }
+
+    /// The snapback spring's stiffness and damping, from its settle time and
+    /// bounce: critically damped at bounce 0, wobbling for a while at 1. Never
+    /// stuck oscillating, whatever the sliders say.
+    pub fn snap_spring(&self) -> (f32, f32) {
+        let omega = 5.8 / (self.snap_ms / 1000.0).max(0.05);
+        let zeta = 1.0 - 0.95 * self.snap_bounce.clamp(0.0, 1.0);
+        (omega * omega, 2.0 * zeta * omega)
     }
 
     /// Seconds per cell of travel for a die of `value`.
