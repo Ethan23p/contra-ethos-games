@@ -1,24 +1,27 @@
 //! Live tuning, one schema for every game. A game's config is a plain struct
-//! whose `Default` is the shipped (initial) value of every tunable; the schema
-//! lists which fields the dev panel shows and how. A [`Tuner`] keeps three
-//! copies, as the old dice Tuning panel did:
+//! whose `Default` is the shipped value of every tunable; the schema lists
+//! which fields the config panel shows and how.
 //!
-//! - **initial**: the shipped values, fixed in code.
-//! - **default**: the player's saved baseline.
-//! - **current**: the live values the game reads, e.g. `tuner.current.gravity`.
+//! A [`Tuner`] holds the **current** values the game reads (e.g.
+//! `tuner.current.gravity`) and a list of **profiles**: named value sets.
+//! "Shipped" (the code's `Default`) and the game's presets are built in; the
+//! player adds their own. Profiles can be kept on the device, and one can be
+//! the default the game starts with. Any number of fields can be **pinned**:
+//! pinned fields can be shown alone and stay reachable in a small floating
+//! widget while the panel is shut. The panel's layout lives in `panel.rs`; the
+//! cards and the option island are drawn here.
 //!
-//! Default and current persist (localStorage on the web, a file natively). The
-//! panel's Copy button puts the current values on the clipboard as text, so a
-//! good set found on the phone can be pasted back into the code as new initials.
+//! Profiles, pins and the default persist (localStorage on the web, a file
+//! natively); the current values don't, so a reload starts from the default.
 
-use egui::Ui;
+use egui::{Color32, RichText, Ui};
 
-/// A config the dev panel can tune.
+/// A config the panel can tune.
 pub trait Tunable: Clone + Default + 'static {
-    /// Names the saved values, e.g. "dice". Change it to discard old saves.
+    /// Names the saved profiles and pins, e.g. "dice". Change it to discard old saves.
     const KEY: &'static str;
     fn schema(s: &mut Schema<Self>);
-    /// Named sets of values offered in the panel, besides Initial.
+    /// Built-in profiles offered besides Shipped.
     fn presets() -> Vec<(&'static str, Self)> {
         Vec::new()
     }
@@ -60,6 +63,28 @@ impl<C> Field<C> {
             Control::Int { get, min, max } => *get(c) = (v.round() as i32).clamp(*min, *max),
             Control::Toggle { get } => *get(c) = v != 0.0,
             Control::Choice { get, options } => *get(c) = (v.max(0.0) as usize).min(options.len() - 1),
+        }
+    }
+
+    /// The value as it reads in copied text: shortest form, no f32 noise.
+    fn text(&self, c: &mut C) -> String {
+        match &self.control {
+            Control::Float { get, .. } => format!("{}", *get(c)),
+            _ => format!("{}", self.get(c)),
+        }
+    }
+
+    /// The value as the panel shows it, with its unit.
+    fn show(&self, v: f64) -> String {
+        let unit = if self.unit.is_empty() { String::new() } else { format!(" {}", self.unit) };
+        match &self.control {
+            Control::Float { step, .. } => {
+                let decimals = if *step >= 1.0 { 0 } else { (-step.log10()).ceil() as usize };
+                format!("{v:.decimals$}{unit}")
+            }
+            Control::Int { .. } => format!("{v}{unit}"),
+            Control::Toggle { .. } => (if v != 0.0 { "On" } else { "Off" }).into(),
+            Control::Choice { options, .. } => options[(v.max(0.0) as usize).min(options.len() - 1)].into(),
         }
     }
 }
@@ -120,12 +145,38 @@ impl<C> Schema<C> {
     }
 }
 
+pub struct Profile<C> {
+    pub name: String,
+    pub values: C,
+    /// Shipped and the game's presets: always there, never overwritten.
+    pub builtin: bool,
+    /// Kept on this device across reloads.
+    pub keep: bool,
+}
+
+/// What the runner's panel needs from a game's tuner, whatever its config type.
+pub trait Config {
+    /// The field of parameters: a header, then the scrollable cards.
+    fn field(&mut self, ui: &mut Ui);
+    /// The option island: profiles and what to do with them.
+    fn island(&mut self, ui: &mut Ui);
+    /// The floating widget's contents: compact cards of the pinned fields.
+    fn widget(&mut self, ui: &mut Ui);
+    fn has_pins(&self) -> bool;
+}
+
 pub struct Tuner<C: Tunable> {
-    pub initial: C,
-    pub default: C,
     pub current: C,
     fields: Vec<Field<C>>,
-    presets: Vec<(&'static str, C)>,
+    profiles: Vec<Profile<C>>,
+    selected: usize,
+    pinned: Vec<bool>,
+    pinned_only: bool,
+    /// The profile loaded at startup on this device.
+    startup: Option<String>,
+    picking: bool,
+    persist: bool,
+    notice: Option<(String, f64)>,
 }
 
 impl<C: Tunable> Default for Tuner<C> {
@@ -135,25 +186,35 @@ impl<C: Tunable> Default for Tuner<C> {
 }
 
 impl<C: Tunable> Tuner<C> {
-    /// Starts from the shipped values, then applies any saved default and current.
+    /// Loads saved profiles and pins, and starts from the default profile.
     pub fn new() -> Self {
         let mut tuner = Self::unsaved();
+        tuner.persist = true;
         if let Some(text) = storage::load(C::KEY) {
-            tuner.load(&text);
+            tuner.load_store(&text);
         }
         tuner
     }
 
-    /// Shipped values only, ignoring saves (tests, headless snapshots).
+    /// Shipped values and built-in profiles only; saves nothing (tests, snapshots).
     pub fn unsaved() -> Self {
         let mut schema = Schema { fields: Vec::new(), group: "General" };
         C::schema(&mut schema);
+        let mut profiles = vec![Profile { name: "Shipped".into(), values: C::default(), builtin: true, keep: true }];
+        for (name, values) in C::presets() {
+            profiles.push(Profile { name: name.into(), values, builtin: true, keep: true });
+        }
         Self {
-            initial: C::default(),
-            default: C::default(),
             current: C::default(),
+            pinned: vec![false; schema.fields.len()],
             fields: schema.fields,
-            presets: C::presets(),
+            profiles,
+            selected: 0,
+            pinned_only: false,
+            startup: None,
+            picking: false,
+            persist: false,
+            notice: None,
         }
     }
 
@@ -167,128 +228,386 @@ impl<C: Tunable> Tuner<C> {
         apply_values(&self.fields, &mut self.current, text);
     }
 
-    fn save(&mut self) {
-        let text = format!(
-            "[default]\n{}[current]\n{}",
-            values_text(&self.fields, &mut self.default),
-            values_text(&self.fields, &mut self.current)
-        );
-        storage::save(C::KEY, &text);
+    /// Pins, the default and the kept profiles, as text.
+    fn store_text(&mut self) -> String {
+        let pins: Vec<&str> = self.fields.iter().zip(&self.pinned).filter(|(_, p)| **p).map(|(f, _)| f.id).collect();
+        let mut text = format!("pins = {}\n", pins.join(", "));
+        if let Some(name) = &self.startup {
+            text += &format!("default = {name}\n");
+        }
+        for p in self.profiles.iter_mut().filter(|p| !p.builtin && p.keep) {
+            text += &format!("[profile {}]\n{}", p.name, values_text(&self.fields, &mut p.values));
+        }
+        text
     }
 
-    fn load(&mut self, text: &str) {
-        let (defaults, current) =
-            text.strip_prefix("[default]\n").and_then(|rest| rest.split_once("[current]\n")).unwrap_or(("", text));
-        apply_values(&self.fields, &mut self.default, defaults);
-        self.current = self.default.clone();
-        apply_values(&self.fields, &mut self.current, current);
-    }
-
-    /// The panel: global actions, then one collapsible section per group.
-    pub fn ui(&mut self, ui: &mut Ui) {
-        let mut changed = false;
-        ui.horizontal_wrapped(|ui| {
-            if ui.button("Copy values").on_hover_text("Current values as text").clicked() {
-                let text = self.to_text();
-                ui.ctx().copy_text(text);
+    fn load_store(&mut self, text: &str) {
+        let mut profile: Option<usize> = None;
+        for line in text.lines() {
+            if let Some(name) = line.strip_prefix("[profile ").and_then(|l| l.strip_suffix(']')) {
+                profile = Some(self.add_profile(name, C::default(), true));
+                continue;
             }
-            if ui.button("Save as default").clicked() {
-                self.default = self.current.clone();
-                changed = true;
-            }
-            if ui.button("Reset to default").clicked() {
-                self.current = self.default.clone();
-                changed = true;
-            }
-            egui::ComboBox::from_id_salt("preset").selected_text("Presets").show_ui(ui, |ui| {
-                if ui.selectable_label(false, "Initial (shipped)").clicked() {
-                    self.current = self.initial.clone();
-                    changed = true;
-                }
-                for (name, values) in &self.presets {
-                    if ui.selectable_label(false, *name).clicked() {
-                        self.current = values.clone();
-                        changed = true;
+            let Some((key, value)) = line.split_once('=') else { continue };
+            let (key, value) = (key.trim(), value.trim());
+            match profile {
+                Some(i) => apply_values(&self.fields, &mut self.profiles[i].values, line),
+                None if key == "pins" => {
+                    for id in value.split(',').map(str::trim) {
+                        if let Some(i) = self.fields.iter().position(|f| f.id == id) {
+                            self.pinned[i] = true;
+                        }
                     }
                 }
+                None if key == "default" => self.startup = Some(value.to_string()),
+                None => {}
+            }
+        }
+        if let Some(i) = self.startup.as_ref().and_then(|name| self.profiles.iter().position(|p| &p.name == name)) {
+            self.selected = i;
+            self.current = self.profiles[i].values.clone();
+        }
+    }
+
+    fn save(&mut self) {
+        if self.persist {
+            let text = self.store_text();
+            storage::save(C::KEY, &text);
+        }
+    }
+
+    /// Adds a profile, or overwrites the player's own one of that name.
+    /// Returns its index.
+    fn add_profile(&mut self, name: &str, values: C, keep: bool) -> usize {
+        if let Some(i) = self.profiles.iter().position(|p| p.name == name) {
+            if !self.profiles[i].builtin {
+                self.profiles[i].values = values;
+            }
+            return i;
+        }
+        self.profiles.push(Profile { name: name.into(), values, builtin: false, keep });
+        self.profiles.len() - 1
+    }
+
+    fn say(&mut self, ui: &Ui, text: impl Into<String>) {
+        self.notice = Some((text.into(), ui.ctx().input(|i| i.time)));
+    }
+
+    /// Copies `from`'s values into `to`, every field or only the pinned ones.
+    fn copy_values(fields: &[Field<C>], pinned: &[bool], from: &mut C, to: &mut C, only_pinned: bool) {
+        for (f, &pin) in fields.iter().zip(pinned) {
+            if pin || !only_pinned {
+                let v = f.get(from);
+                f.set(to, v);
+            }
+        }
+    }
+}
+
+impl<C: Tunable> Config for Tuner<C> {
+    fn field(&mut self, ui: &mut Ui) {
+        ui.horizontal(|ui| {
+            ui.heading("Config");
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("Copy values").clicked() {
+                    let text = self.to_text();
+                    ui.ctx().copy_text(text);
+                    self.say(ui, "Current values copied.");
+                }
+                let any = self.has_pins();
+                ui.add_enabled_ui(any || self.pinned_only, |ui| ui.toggle_value(&mut self.pinned_only, "Pinned only"));
             });
         });
-        ui.separator();
+        ui.add_space(4.0);
 
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            let mut i = 0;
-            while i < self.fields.len() {
-                let group = self.fields[i].group;
-                let end = (i..self.fields.len()).find(|&j| self.fields[j].group != group).unwrap_or(self.fields.len());
-                egui::CollapsingHeader::new(group).default_open(true).show(ui, |ui| {
-                    for field in &self.fields[i..end] {
-                        changed |= field_row(ui, field, &mut self.current, &mut self.default, &mut self.initial);
-                    }
-                });
-                i = end;
+        let Self { fields, pinned, current, profiles, selected, pinned_only, .. } = self;
+        let profile = &mut profiles[*selected];
+        let mut pins_changed = false;
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+            let mut group = "";
+            for (i, field) in fields.iter().enumerate() {
+                if *pinned_only && !pinned[i] {
+                    continue;
+                }
+                if field.group != group {
+                    group = field.group;
+                    ui.add_space(6.0);
+                    ui.label(RichText::new(group.to_uppercase()).small().color(DIM));
+                }
+                let out = card(ui, field, current, Some((&profile.name, &mut profile.values)), Some(&mut pinned[i]));
+                pins_changed |= out.pin_toggled;
             }
+            if *pinned_only && !pinned.iter().any(|&p| p) {
+                ui.label(RichText::new("Nothing pinned.").color(DIM));
+            }
+            ui.add_space(8.0);
         });
-
-        if changed {
+        if pins_changed {
+            if !self.has_pins() {
+                self.pinned_only = false;
+            }
             self.save();
         }
     }
+
+    fn island(&mut self, ui: &mut Ui) {
+        let width = ui.available_width();
+        let mut dirty = false;
+
+        // Profile selector: tap to open the list, pick one or start a new one.
+        if self.picking {
+            egui::Frame::new().fill(CARD).corner_radius(8.0).inner_margin(6.0).show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                for i in 0..self.profiles.len() {
+                    let p = &self.profiles[i];
+                    let mut label = p.name.clone();
+                    if self.startup.as_deref() == Some(p.name.as_str()) {
+                        label += " · default";
+                    }
+                    if p.builtin {
+                        label += " · built-in";
+                    } else if !p.keep {
+                        label += " · this session";
+                    }
+                    if ui.selectable_label(i == self.selected, label).clicked() {
+                        self.selected = i;
+                        self.picking = false;
+                    }
+                }
+                if ui.button("New profile…").clicked() {
+                    let suggested = format!("Profile {}", self.profiles.iter().filter(|p| !p.builtin).count() + 1);
+                    if let Some(name) = ask_name(&suggested) {
+                        let values = self.current.clone();
+                        self.selected = self.add_profile(&name, values, false);
+                        self.say(ui, format!("Made \"{name}\" from the current values."));
+                    }
+                    self.picking = false;
+                }
+            });
+        }
+        let name = self.profiles[self.selected].name.clone();
+        let builtin = self.profiles[self.selected].builtin;
+        let marker = if self.picking { "close" } else { "change" };
+        if ui.add(egui::Button::new(format!("Profile: {name}   ({marker})")).min_size([width, 32.0].into())).clicked() {
+            self.picking = !self.picking;
+        }
+
+        let half = [(width - ui.spacing().item_spacing.x - 44.0) / 2.0, 30.0];
+        let Self { fields, pinned, current, profiles, selected, .. } = self;
+        let profile = &mut profiles[*selected];
+        let any_pins = pinned.iter().any(|&p| p);
+        let mut note = None;
+        ui.horizontal(|ui| {
+            ui.add_sized([40.0, 30.0], egui::Label::new("Load"));
+            if ui.add(egui::Button::new("All").min_size(half.into())).clicked() {
+                Self::copy_values(fields, pinned, &mut profile.values, current, false);
+                note = Some(format!("Loaded \"{}\".", profile.name));
+            }
+            if ui.add_enabled(any_pins, egui::Button::new("Pinned").min_size(half.into())).clicked() {
+                Self::copy_values(fields, pinned, &mut profile.values, current, true);
+                note = Some(format!("Loaded the pinned values of \"{}\".", profile.name));
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.add_sized([40.0, 30.0], egui::Label::new("Save"));
+            if ui.add_enabled(!builtin, egui::Button::new("All").min_size(half.into())).clicked() {
+                Self::copy_values(fields, pinned, current, &mut profile.values, false);
+                note = Some(format!("Saved into \"{}\".", profile.name));
+                dirty = true;
+            }
+            if ui.add_enabled(!builtin && any_pins, egui::Button::new("Pinned").min_size(half.into())).clicked() {
+                Self::copy_values(fields, pinned, current, &mut profile.values, true);
+                note = Some(format!("Saved the pinned values into \"{}\".", profile.name));
+                dirty = true;
+            }
+        });
+        ui.horizontal(|ui| {
+            let mut keep = profile.keep;
+            if ui.add_enabled(!builtin, egui::Checkbox::new(&mut keep, "Keep on this device")).changed() {
+                profile.keep = keep;
+                dirty = true;
+            }
+        });
+        let is_default = self.startup.as_deref() == Some(name.as_str());
+        ui.horizontal(|ui| {
+            let label = if is_default { "Default (copy again)" } else { "Make default" };
+            if ui.add(egui::Button::new(label).min_size([width, 30.0].into())).clicked() {
+                let p = &mut self.profiles[self.selected];
+                p.keep = true;
+                let text = values_text(&self.fields, &mut p.values);
+                ui.ctx().copy_text(text);
+                self.startup = Some(name.clone());
+                note = Some(format!(
+                    "\"{name}\" now loads first on this device. Its values are copied: send them to Claude to ship them for everyone."
+                ));
+                dirty = true;
+            }
+        });
+        if let Some(note) = note {
+            self.say(ui, note);
+        }
+
+        if let Some((text, at)) = &self.notice
+            && ui.ctx().input(|i| i.time) - at < 6.0
+        {
+            ui.add(egui::Label::new(RichText::new(text).small().color(DIM)).wrap());
+        }
+        if dirty {
+            self.save();
+        }
+    }
+
+    fn widget(&mut self, ui: &mut Ui) {
+        let Self { fields, pinned, current, .. } = self;
+        egui::ScrollArea::vertical().max_height(ui.ctx().content_rect().height() * 0.5).show(ui, |ui| {
+            for (i, field) in fields.iter().enumerate() {
+                if pinned[i] {
+                    card(ui, field, current, None, None);
+                }
+            }
+        });
+    }
+
+    fn has_pins(&self) -> bool {
+        self.pinned.iter().any(|&p| p)
+    }
 }
 
-/// One tunable: its control, a reset when it differs from the default, and a
-/// dot when it differs from the shipped value. Returns whether it changed.
-fn field_row<C>(ui: &mut Ui, field: &Field<C>, current: &mut C, default: &mut C, initial: &mut C) -> bool {
-    // Sliders snap to their step, so compare loosely.
-    let differs = |a: f64, b: f64| (a - b).abs() > 1e-4 * b.abs().max(1.0);
-    let before = field.get(current);
-    let off_default = differs(before, field.get(default));
-    let off_initial = differs(before, field.get(initial));
-    let mut label = field.label.to_string();
-    if off_initial {
-        label.push_str(" •");
-    }
-    // Label on its own line, control full width beneath: fits a phone.
-    let mut changed = false;
-    ui.horizontal(|ui| {
-        ui.label(label).on_hover_text(field.id);
-        if off_default && ui.small_button("reset").on_hover_text("Back to default").clicked() {
-            let v = field.get(default);
-            field.set(current, v);
-            changed = true;
+const CARD: Color32 = Color32::from_rgba_premultiplied(30, 30, 34, 235);
+const DIM: Color32 = Color32::from_rgb(150, 145, 135);
+const ACCENT: Color32 = Color32::from_rgb(91, 142, 242);
+
+struct CardOut {
+    pin_toggled: bool,
+}
+
+/// One parameter card: label, current value and pin; the selected profile's
+/// value (tap to use it); the control, with its range.
+fn card<C>(
+    ui: &mut Ui,
+    field: &Field<C>,
+    current: &mut C,
+    profile: Option<(&str, &mut C)>,
+    pinned: Option<&mut bool>,
+) -> CardOut {
+    let mut out = CardOut { pin_toggled: false };
+    egui::Frame::new().fill(CARD).corner_radius(10.0).inner_margin(egui::Margin::symmetric(10, 8)).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.horizontal(|ui| {
+            ui.label(RichText::new(field.label).strong()).on_hover_text(field.id);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if let Some(pinned) = pinned
+                    && pin_button(ui, *pinned).clicked()
+                {
+                    *pinned = !*pinned;
+                    out.pin_toggled = true;
+                }
+                ui.label(RichText::new(field.show(field.get(current))).color(ACCENT));
+            });
+        });
+        if let Some((name, values)) = profile {
+            let theirs = field.get(values);
+            let differs = (field.get(current) - theirs).abs() > 1e-4 * theirs.abs().max(1.0);
+            if differs {
+                let text = format!("{name}: {}   (use)", field.show(theirs));
+                if ui.add(egui::Button::new(RichText::new(text).small()).small()).clicked() {
+                    field.set(current, theirs);
+                }
+            } else {
+                ui.label(RichText::new(format!("{name}: same")).small().color(DIM));
+            }
         }
+        controls(ui, field, current);
     });
-    // Room for the slider's value box beside it.
-    ui.spacing_mut().slider_width = (ui.available_width() - 80.0).max(80.0);
+    ui.add_space(4.0);
+    out
+}
+
+fn controls<C>(ui: &mut Ui, field: &Field<C>, current: &mut C) {
+    let button = |ui: &mut Ui, text: &str| ui.add(egui::Button::new(text).min_size([30.0, 28.0].into())).clicked();
     match &field.control {
         Control::Float { get, min, max, step } => {
-            let slider = egui::Slider::new(get(current), *min..=*max).step_by(*step as f64).suffix(unit(field.unit));
-            changed |= ui.add(slider).changed();
+            ui.horizontal(|ui| {
+                let v = get(current);
+                if button(ui, "-") {
+                    *v = ((*v - step) / step).round() * step;
+                }
+                let (lo, hi) = (field.show(*min as f64), field.show(*max as f64));
+                ui.label(RichText::new(lo.split(' ').next().unwrap_or("")).small().color(DIM));
+                ui.spacing_mut().slider_width = (ui.available_width() - 90.0).max(60.0);
+                ui.add(egui::Slider::new(v, *min..=*max).step_by(*step as f64).show_value(false));
+                ui.label(RichText::new(hi.split(' ').next().unwrap_or("")).small().color(DIM));
+                if button(ui, "+") {
+                    *v = ((*v + step) / step).round() * step;
+                }
+                *v = v.clamp(*min, *max);
+            });
         }
         Control::Int { get, min, max } => {
-            changed |= ui.add(egui::Slider::new(get(current), *min..=*max).suffix(unit(field.unit))).changed();
+            ui.horizontal(|ui| {
+                let v = get(current);
+                if button(ui, "-") {
+                    *v -= 1;
+                }
+                ui.label(RichText::new(min.to_string()).small().color(DIM));
+                ui.spacing_mut().slider_width = (ui.available_width() - 90.0).max(60.0);
+                ui.add(egui::Slider::new(v, *min..=*max).show_value(false));
+                ui.label(RichText::new(max.to_string()).small().color(DIM));
+                if button(ui, "+") {
+                    *v += 1;
+                }
+                *v = (*v).clamp(*min, *max);
+            });
         }
         Control::Toggle { get } => {
-            changed |= ui.checkbox(get(current), "on").changed();
+            ui.horizontal(|ui| {
+                let v = get(current);
+                ui.selectable_value(v, false, "Off");
+                ui.selectable_value(v, true, "On");
+            });
         }
         Control::Choice { get, options } => {
-            let value = get(current);
-            egui::ComboBox::from_id_salt(field.id).selected_text(options[*value]).show_ui(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                let v = get(current);
                 for (i, option) in options.iter().enumerate() {
-                    changed |= ui.selectable_value(value, i, *option).changed();
+                    ui.selectable_value(v, i, *option);
                 }
             });
         }
     }
-    ui.add_space(4.0);
-    changed
 }
 
-fn unit(unit: &str) -> String {
-    if unit.is_empty() { String::new() } else { format!(" {unit}") }
+/// A thumbtack: filled when pinned.
+fn pin_button(ui: &mut Ui, pinned: bool) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size([30.0, 28.0].into(), egui::Sense::click());
+    let color = if pinned { ACCENT } else { DIM };
+    let p = ui.painter();
+    let c = rect.center();
+    let head = c + egui::vec2(0.0, -4.0);
+    if pinned {
+        p.circle_filled(head, 5.0, color);
+    } else {
+        p.circle_stroke(head, 5.0, egui::Stroke::new(1.5, color));
+    }
+    p.line_segment([c + egui::vec2(0.0, 1.0), c + egui::vec2(0.0, 9.0)], egui::Stroke::new(1.8, color));
+    response.on_hover_text(if pinned { "Unpin" } else { "Pin" })
+}
+
+/// A name for a new profile. On the web the canvas can't raise a phone's
+/// keyboard, so this asks with the browser's own prompt.
+fn ask_name(suggested: &str) -> Option<String> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let name = web_sys::window()?.prompt_with_message_and_default("Profile name", suggested).ok()??;
+        let name = name.trim().replace(['[', ']', '\n'], "");
+        (!name.is_empty()).then_some(name)
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    Some(suggested.to_string())
 }
 
 fn values_text<C>(fields: &[Field<C>], c: &mut C) -> String {
-    fields.iter().map(|f| format!("{} = {}\n", f.id, f.get(c))).collect()
+    fields.iter().map(|f| format!("{} = {}\n", f.id, f.text(c))).collect()
 }
 
 fn apply_values<C>(fields: &[Field<C>], c: &mut C, text: &str) {
@@ -365,6 +684,9 @@ mod tests {
             s.toggle("gravity", "Gravity", |c| &mut c.gravity);
             s.choice("direction", "Direction", &["Up", "Down"], |c| &mut c.direction);
         }
+        fn presets() -> Vec<(&'static str, Self)> {
+            vec![("Fast", Self { speed: 9.0, ..Self::default() })]
+        }
     }
 
     #[test]
@@ -378,6 +700,13 @@ mod tests {
     }
 
     #[test]
+    fn copied_floats_carry_no_f32_noise() {
+        let mut t = Tuner::<Config>::unsaved();
+        t.current.speed = 0.82;
+        assert!(t.to_text().contains("speed = 0.82\n"), "{}", t.to_text());
+    }
+
+    #[test]
     fn pasted_values_are_clamped_and_junk_skipped() {
         let mut t = Tuner::<Config>::unsaved();
         t.apply_text("speed = 99\nsize = 1\nnonsense\nmissing = 3\ngravity = 1\ndirection = 7");
@@ -385,10 +714,39 @@ mod tests {
     }
 
     #[test]
-    fn saves_keep_default_and_current_apart() {
+    fn kept_profiles_pins_and_default_round_trip() {
         let mut t = Tuner::<Config>::unsaved();
-        t.load("[default]\nspeed = 3\n[current]\nspeed = 4\n");
-        assert_eq!((t.default.speed, t.current.speed), (3.0, 4.0));
-        assert_eq!(t.initial.speed, 1.5);
+        t.add_profile("Mine", Config { speed: 4.0, ..Config::default() }, true);
+        t.add_profile("Scratch", Config { speed: 6.0, ..Config::default() }, false);
+        t.pinned[0] = true;
+        t.pinned[3] = true;
+        t.startup = Some("Mine".into());
+        let text = t.store_text();
+        assert!(!text.contains("Scratch"), "session-only profiles aren't saved");
+        assert!(!text.contains("[profile Shipped]"), "built-ins aren't saved");
+
+        let mut back = Tuner::<Config>::unsaved();
+        back.load_store(&text);
+        assert_eq!(back.pinned, vec![true, false, false, true]);
+        assert_eq!(back.current.speed, 4.0, "the default profile loads first");
+        assert_eq!(back.profiles[back.selected].name, "Mine");
+        assert_eq!(back.profiles.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), ["Shipped", "Fast", "Mine"]);
+    }
+
+    #[test]
+    fn builtin_profiles_are_never_overwritten() {
+        let mut t = Tuner::<Config>::unsaved();
+        let i = t.add_profile("Shipped", Config { speed: 7.0, ..Config::default() }, true);
+        assert_eq!(i, 0);
+        assert_eq!(t.profiles[0].values.speed, 1.5);
+    }
+
+    #[test]
+    fn loading_pinned_touches_only_pinned_fields() {
+        let mut t = Tuner::<Config>::unsaved();
+        t.pinned[0] = true;
+        let mut from = Config { speed: 9.0, size: 6, ..Config::default() };
+        Tuner::copy_values(&t.fields, &t.pinned, &mut from, &mut t.current, true);
+        assert_eq!((t.current.speed, t.current.size), (9.0, 5));
     }
 }

@@ -221,9 +221,8 @@ impl App for Sandbox {
         s.text(Vec2::new(0.0, -74.0 - 1.0), 6.0, &format!("taps {}", self.taps), rgba(0xffffff, 0.5));
     }
 
-    fn dev_ui(&mut self, ui: &mut engine::egui::Ui) {
-        ui.heading("Sandbox");
-        self.tuner.ui(ui);
+    fn config(&mut self) -> Option<&mut dyn engine::tune::Config> {
+        Some(&mut self.tuner)
     }
 }
 

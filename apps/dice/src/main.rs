@@ -408,12 +408,14 @@ impl App for DiceApp {
         }
     }
 
-    fn dev_ui(&mut self, ui: &mut engine::egui::Ui) {
-        ui.heading("Dice Merge");
-        if ui.button("New game").clicked() {
+    fn config(&mut self) -> Option<&mut dyn engine::tune::Config> {
+        Some(&mut self.tuner)
+    }
+
+    fn config_actions(&mut self, ui: &mut engine::egui::Ui) {
+        if ui.add(engine::egui::Button::new("New game").min_size([ui.available_width(), 30.0].into())).clicked() {
             self.new_game();
         }
-        self.tuner.ui(ui);
     }
 }
 

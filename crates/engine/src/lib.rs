@@ -6,6 +6,7 @@
 
 mod gpu;
 mod input;
+mod panel;
 mod runner;
 mod shapes;
 mod text;
