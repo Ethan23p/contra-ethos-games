@@ -1,21 +1,24 @@
 //! Blob Merge rules and physics, as defined by the Blob Merge abstract specification.
 //! Pure Rust: no rendering or platform dependencies (see CLAUDE.md).
 //!
-//! So far this is the field and its physics: [`Field`] holds the blobs, their
-//! bonds and the merges in progress, and [`Field::step`] runs the spec's
-//! continuous Move → Merge loop at a fixed dt with substeps. [`Field::launch`]
-//! and [`Field::seed`] add blobs. Every constant lives in [`Physics`].
+//! [`Field`] holds the blobs, their bonds and the merges in progress, and
+//! [`Field::step`] runs the spec's continuous Move → Merge loop at a fixed dt
+//! with substeps; [`Field::launch`] and [`Field::seed`] add blobs. [`Game`]
+//! plays the rules on top: the queue and its pool, Purge, scoring, nova and
+//! the ending. Physics constants live in [`Physics`], gameplay ones in [`Rules`].
 //!
 //! Units: world units are the old build's pixels on a 600-unit field, and
 //! times are seconds, so the old presets convert directly.
 
 mod field;
+mod game;
 mod rng;
 
 #[cfg(test)]
 mod tests;
 
 pub use field::{Blob, Event, Field, Merge, Pending, merged_value};
+pub use game::{Game, Rules};
 pub use rng::Rng;
 
 /// Colour classes. Only identical blobs (same group, same value) interact.

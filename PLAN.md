@@ -2,7 +2,7 @@
 
 The living plan for rebuilding Dice Merge and Blob Merge in Rust + WebGPU and publishing them on contra-ethos.com. Tick steps as they land, and log decisions at the bottom.
 
-**Current phase: 3, Blob Merge (physics sandbox).** `crates/blob` has the field and its physics (Move, bonding, threshold and merging, Launch, Seed) with policy tests; `apps/blob` is a sandbox at play.contra-ethos.com/blob/ with every force in the config panel. Next step: Ethan tunes the fluid and the launch; then the rules (pool window, draw, scoring and combo, purge, nova, ending).
+**Current phase: 3, Blob Merge (rules).** `crates/blob` has the field and its physics, and `Game` plays every spec rule on top (pool window, draw, scoring and combo, Purge, nova, ending), all with policy tests. `apps/blob` at play.contra-ethos.com/blob/ is playable end to end, with placeholder effects and every force and rule in the config panel. Next step: Ethan plays the rules on the phone and settles the open decision below; then the gloopy merge look and the overflow warning.
 
 ## Goal state
 
@@ -67,12 +67,13 @@ The discrete game comes first: it's the cheapest way to prove the spec → code 
 
 ### 3. Blob Merge
 - [x] `crates/blob`: blobs, bonds, merges and the field; Move (Lennard-Jones with a soft core and force cap, the saturating well at the tracked centre, damping, bond springs), Merge (convergence on the shared centre, joins, the light push), Launch and Seed, at a fixed dt with substeps.
-- [ ] Purge (needs the pool).
+- [x] Purge: blobs below the pool's floor leave the field, unless they're merging or about to.
 - [x] Policies with tests: motion, identity, threshold and m, bonding, merging (convergence on the shared centre, joins during convergence, bigger jumps for bigger merges), launching, seeding.
-- [ ] Policies with tests: pool window, draw, scoring and combo, nova, ending.
+- [x] Policies with tests: pool window, draw, scoring and combo, nova, ending (`Game`, `Rules`).
 - [ ] `apps/blob`: the launcher ring and aiming, near-instant reload, the gloopy merge look (likely a metaball or smooth-union SDF pass), the rim and the overflow warning.
 - [x] Physics presets and live tuning: every `Physics` constant in the panel; the old build's Light / Flowey, Thick Liquid and Clay Clumps as presets.
-- [ ] Physics sandbox (`apps/blob`): plain circles, bonds as bridges, aim and release to launch, a stand-in 1–8 draw. Awaiting Ethan's tuning.
+- [x] Physics sandbox (`apps/blob`): plain circles, bonds as bridges, aim and release to launch. Tuned by Ethan (2026-10-24).
+- [x] The rules in the app: score and combo readout, the pool, points rising from merges, purge and nova placeholders, the rim pulsing as a blob runs down the grace, game over and tap to play again.
 - [ ] Feel pass on the phone, including rapid-fire launching.
 
 ### 4. Publish
@@ -88,7 +89,7 @@ A separate undertaking under the same umbrella. It's plain JS + WGSL today, so j
 
 ## Open decisions
 
-- None right now.
+- **Seeded 1s are purged at once.** Seeding opens with values 1–8, but the opening pool is 2–8, so Purge removes every seeded 1 on the first step. Options: seed from the opening pool (2–8), let the opening pool reach down to 1, or keep it (a few 1s vanish as the game starts).
 
 ## Decision log
 
@@ -119,3 +120,8 @@ A separate undertaking under the same umbrella. It's plain JS + WGSL today, so j
 | 2026-10-23 | Blob physics: a custom integrator in `crates/blob`, not a physics crate. | The forces are bespoke (Lennard-Jones, a saturating well, bond springs), and determinism matters for tests. |
 | 2026-10-23 | Blob world units are the old build's pixels on a 600-unit field; its per-16 ms constants convert by ÷ 0.016 (damping: −ln(keep) ÷ 0.016). | The old presets carry over exactly as starting points. |
 | 2026-10-23 | The launch speed is set by its reach: speed = reach × ring × damping. | Under linear damping a blob coasts speed ÷ damping, so the launch lands where intended whatever the fluid preset. |
+| 2026-10-24 | Pool window: below a peak of 8 the window stays at 3 values rather than narrowing (the spec's floor((log₂ peak − 3) / 6) goes negative there). | A narrower window would offer only 4s and 8s on a field whose peak is lower. |
+| 2026-10-24 | A queued entry the pool no longer allows re-rolls its value and keeps its group. | The player may already be aiming for that colour. |
+| 2026-10-24 | Purge skips blobs that are merging or held for a merge; the merge finishes first. | Removing a blob mid-merge would cancel a merge the player already earned. |
+| 2026-10-24 | Nova seeds around the last blob; a field emptied outright (only possible by purging) reseeds as a new game, without the bonus. | The spec covers one blob remaining, not none. |
+| 2026-10-24 | Ending times each blob separately, by its centre's distance from the field centre; once over, the field keeps moving but the rules and launches stop. | Matches "any blob stays outside the rim for a continuous grace period". |

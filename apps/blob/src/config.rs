@@ -6,7 +6,7 @@
 //! build's other fluids, converted from its per-16 ms units: they set the
 //! fluid, not the well or the launch.
 
-use blob::Physics;
+use blob::{Physics, Rules};
 use engine::{Schema, Tunable};
 
 #[derive(Clone, PartialEq)]
@@ -38,6 +38,15 @@ pub struct Config {
     pub max_speed: f32,
     pub substeps: i32,
     pub show_bonds: bool,
+    pub ceiling: i32,
+    pub window: i32,
+    pub widen_every: i32,
+    pub falloff: f32,
+    pub queue: i32,
+    pub combo_secs: f32,
+    pub nova_bonus: i32,
+    pub nova_blobs: i32,
+    pub grace: f32,
 }
 
 /// Pairs rest at 2^(1/6) σ.
@@ -74,12 +83,15 @@ impl Default for Config {
             max_speed: 3000.0,
             substeps: 4,
             show_bonds: true,
+            ..Self::from_physics(Physics::default())
         }
     }
 }
 
 impl Config {
+    /// A config from a physics set, with the spec's rules.
     fn from_physics(p: Physics) -> Self {
+        let r = Rules::default();
         Self {
             mode: if p.m == 2 { 1 } else { 0 },
             radius: p.radius,
@@ -106,6 +118,29 @@ impl Config {
             max_speed: p.max_speed,
             substeps: p.substeps as i32,
             show_bonds: true,
+            ceiling: r.ceiling as i32,
+            window: r.window as i32,
+            widen_every: r.widen_every as i32,
+            falloff: r.falloff as f32,
+            queue: r.queue as i32,
+            combo_secs: r.combo_secs,
+            nova_bonus: r.nova_bonus as i32,
+            nova_blobs: r.nova_blobs as i32,
+            grace: r.grace,
+        }
+    }
+
+    pub fn rules(&self) -> Rules {
+        Rules {
+            ceiling: self.ceiling.max(1) as u32,
+            window: self.window.max(1) as usize,
+            widen_every: self.widen_every.max(1) as u32,
+            falloff: self.falloff as f64,
+            queue: self.queue.max(1) as usize,
+            combo_secs: self.combo_secs,
+            nova_bonus: self.nova_bonus.max(0) as u64,
+            nova_blobs: self.nova_blobs.max(1) as usize,
+            grace: self.grace,
         }
     }
 
@@ -170,7 +205,17 @@ impl Tunable for Config {
     const KEY: &'static str = "blob";
 
     fn schema(s: &mut Schema<Self>) {
-        s.group("Rules").choice("mode", "Merge size m", &["Bonded (3)", "Unbonded (2)"], |c| &mut c.mode);
+        s.group("Rules")
+            .choice("mode", "Merge size m", &["Bonded (3)", "Unbonded (2)"], |c| &mut c.mode)
+            .int("ceiling", "Pool ceiling at least", "", 1..=1024, |c| &mut c.ceiling)
+            .int("window", "Pool holds at first", "values", 1..=12, |c| &mut c.window)
+            .int("widen_every", "Pool widens every", "doublings", 1..=20, |c| &mut c.widen_every)
+            .float("falloff", "Draw falloff per step up", "×", 0.5..=4.0, 0.01, |c| &mut c.falloff)
+            .int("queue", "Queue length", "", 1..=6, |c| &mut c.queue)
+            .float("combo_secs", "Combo resets after", "s", 0.1..=10.0, 0.05, |c| &mut c.combo_secs)
+            .int("nova_bonus", "Nova bonus", "points", 0..=100_000, |c| &mut c.nova_bonus)
+            .int("nova_blobs", "Nova seeds", "blobs", 1..=40, |c| &mut c.nova_blobs)
+            .float("grace", "Grace outside the rim", "s", 0.5..=60.0, 0.1, |c| &mut c.grace);
         s.group("Cohesion (Lennard-Jones)")
             .float("epsilon", "Cohesion strength ε", "u²/s²", 0.0..=5000.0, 5.0, |c| &mut c.epsilon)
             .float("spacing", "Pair spacing", "× diameter", 0.5..=2.0, 0.01, |c| &mut c.spacing)

@@ -64,6 +64,30 @@ pub enum Event {
         count: usize,
         at: Vec2,
     },
+    /// A merge scored `points` at combo `combo`; `blob` is the merged blob.
+    Scored {
+        blob: u32,
+        points: u64,
+        combo: u32,
+        at: Vec2,
+    },
+    /// The blob fell below the pool and left the field.
+    Purged {
+        blob: u32,
+        group: u8,
+        value: u32,
+        at: Vec2,
+    },
+    /// One blob remained: it scored `bonus` and became a fresh seed.
+    Nova {
+        value: u32,
+        at: Vec2,
+        bonus: u64,
+    },
+    /// A blob stayed outside the rim for the grace period.
+    Ended {
+        score: u64,
+    },
 }
 
 #[derive(Clone, Debug, Default)]
@@ -125,15 +149,38 @@ impl Field {
     /// the centre on a sunflower spiral so none start overlapping.
     pub fn seed(&mut self, p: &Physics, rng: &mut Rng) {
         let count = 10 + rng.below(4);
+        self.scatter(p, rng, count, |rng| 1 << rng.below(4));
+    }
+
+    /// Adds `count` blobs in random groups, values from `value`, around the
+    /// centre on a sunflower spiral so none start overlapping.
+    pub fn scatter(&mut self, p: &Physics, rng: &mut Rng, count: usize, mut value: impl FnMut(&mut Rng) -> u32) {
         let golden = std::f32::consts::PI * (3.0 - 5f32.sqrt());
         for k in 0..count {
             // Neighbours on the spiral sit about 1.15 σ apart, near rest.
             let r = p.sigma * 0.65 * (k as f32 + 0.5).sqrt();
             let pos = self.centre + Vec2::from_angle(k as f32 * golden) * r;
-            let value = 1 << rng.below(4);
+            let value = value(rng);
             let group = rng.below(GROUPS as usize) as u8;
             self.add(group, value, pos);
         }
+    }
+
+    /// Takes a blob off the field with its bonds, out of any merge or
+    /// pending neighborhood it's in.
+    pub fn remove(&mut self, id: u32) -> Option<Blob> {
+        let i = self.index(id)?;
+        let blob = self.blobs.remove(i);
+        self.bonds.retain(|&(a, b)| a != id && b != id);
+        for m in &mut self.merges {
+            m.members.retain(|&k| k != id);
+        }
+        self.merges.retain(|m| !m.members.is_empty());
+        for h in &mut self.pending {
+            h.members.retain(|&k| k != id);
+        }
+        self.pending.retain(|h| !h.members.is_empty());
+        Some(blob)
     }
 
     /// Move, then Merge: advance `dt` seconds in substeps, finish the merges
