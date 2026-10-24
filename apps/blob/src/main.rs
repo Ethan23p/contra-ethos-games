@@ -95,12 +95,13 @@ impl BlobApp {
         }
     }
 
-    /// Fits the ring, and a launcher on it, into the screen below the band.
+    /// Fits the ring, and the launcher blob on it, into the screen below the
+    /// band, with a little room to spare.
     fn fit(&self, screen: &Screen, centre: Vec2) -> View {
         let c = &self.tuner.current;
         let top = screen.em(BAND);
         let area = screen.size - Vec2::new(0.0, top + screen.em(0.5));
-        View::fit_area(Vec2::splat(2.0 * (c.ring + c.radius * 2.6)), centre, Vec2::new(0.0, top), area)
+        View::fit_area(Vec2::splat(2.0 * (c.ring + c.radius * 1.4)), centre, Vec2::new(0.0, top), area)
     }
 }
 
@@ -205,22 +206,25 @@ impl App for BlobApp {
             draw_blob(s, at(b.id, b.pos), r, b.group, b.value, alpha);
         }
 
-        // The launcher and its queue.
         let (g, v) = self.queue[0];
         draw_blob(s, launcher, r, g, v, 1.0);
-        let (g, v) = self.queue[1];
-        draw_blob(s, launcher + dir * r * 1.9, r * 0.6, g, v, 0.7);
 
-        // The band: a plain readout for now.
+        // The band: a plain readout on the left, the next blob on the right.
         s.view = View::PIXELS;
+        let left = |s: &Shapes, size: f32, text: &str, y: f32| {
+            screen.at(Anchor::TOP_LEFT, Vec2::new(screen.em(1.0) + s.text_width(size, text) * 0.5, screen.em(y)))
+        };
         let line = format!("{} BLOBS · {} BONDS", self.field.blobs.len(), self.field.bonds.len());
-        s.text(screen.at(Anchor::TOP, Vec2::new(0.0, screen.em(1.4))), screen.em(1.1), &line, rgb(TEXT));
-        s.text(
-            screen.at(Anchor::TOP, Vec2::new(0.0, screen.em(2.6))),
-            screen.em(0.7),
-            "PHYSICS SANDBOX · AIM AND RELEASE TO LAUNCH",
-            rgb(DIM),
-        );
+        let size = screen.em(1.1);
+        s.text(left(s, size, &line, 1.4), size, &line, rgb(TEXT));
+        let hint = "AIM AND RELEASE TO LAUNCH";
+        let size = screen.em(0.7);
+        s.text(left(s, size, hint, 2.6), size, hint, rgb(DIM));
+        let (g, v) = self.queue[1];
+        let next = screen.at(Anchor::TOP_RIGHT, Vec2::new(-screen.em(2.0), screen.em(1.75)));
+        draw_blob(s, next, screen.em(1.0) / DRAWN, g, v, 1.0);
+        let size = screen.em(0.8);
+        s.text(next - Vec2::new(screen.em(1.6) + s.text_width(size, "NEXT") * 0.5, 0.0), size, "NEXT", rgb(DIM));
         s.view = self.view;
     }
 

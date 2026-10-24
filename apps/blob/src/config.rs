@@ -1,8 +1,10 @@
-//! Every tunable, mirroring `blob::Physics`. `Default` holds the shipped
-//! values; paste Ethan's "Copy values" here. "Spec fluid" is tuned for the
-//! spec's launch; the rest are the old build's,
-//! converted from its per-16 ms units: they set the fluid, not the well or the
-//! launch.
+//! Every tunable, mirroring `blob::Physics`, except that pair spacing is set
+//! relative to the blob, so the radius can change without the blobs
+//! overlapping. `Default` holds the shipped values; paste Ethan's "Copy
+//! values" here. "Standard" is `Physics::default()`, the old build's fluid;
+//! "Spec fluid" is that tuned for the spec's launch; the rest are the old
+//! build's other fluids, converted from its per-16 ms units: they set the
+//! fluid, not the well or the launch.
 
 use blob::Physics;
 use engine::{Schema, Tunable};
@@ -12,7 +14,8 @@ pub struct Config {
     /// 0: bonded (m = 3), 1: unbonded (m = 2).
     pub mode: usize,
     pub radius: f32,
-    pub sigma: f32,
+    /// Where a pair rests, centre to centre, × the diameter; sets σ.
+    pub spacing: f32,
     pub epsilon: f32,
     pub cutoff: f32,
     pub max_force: f32,
@@ -33,13 +36,46 @@ pub struct Config {
     pub show_bonds: bool,
 }
 
+/// Pairs rest at 2^(1/6) σ.
+const REST: f32 = 1.122_462;
+
 impl Default for Config {
+    /// Ethan's first round on Spec fluid (2026-10-24), with the blobs grown to
+    /// the old build's size against the ring: σ, ε and the force cap scaled
+    /// with them so the fluid feels the same.
     fn default() -> Self {
-        let p = Physics::default();
+        Self {
+            mode: 1,
+            radius: 24.5,
+            spacing: 0.94,
+            epsilon: 295.0,
+            cutoff: 2.5,
+            max_force: 23_500.0,
+            damping: 2.0,
+            well: 1570.0,
+            well_radius: 760.0,
+            centre_follow: 0.5,
+            spring: 9.5,
+            bond_rest: 1.05,
+            touch: 1.2,
+            merge_secs: 0.28,
+            merge_push: 150.0,
+            ring: 195.0,
+            rim: 120.0,
+            launch_reach: 1.4,
+            max_speed: 3000.0,
+            substeps: 4,
+            show_bonds: true,
+        }
+    }
+}
+
+impl Config {
+    fn from_physics(p: Physics) -> Self {
         Self {
             mode: if p.m == 2 { 1 } else { 0 },
             radius: p.radius,
-            sigma: p.sigma,
+            spacing: p.sigma * REST / (2.0 * p.radius),
             epsilon: p.epsilon,
             cutoff: p.cutoff,
             max_force: p.max_force,
@@ -60,14 +96,12 @@ impl Default for Config {
             show_bonds: true,
         }
     }
-}
 
-impl Config {
     pub fn physics(&self) -> Physics {
         Physics {
             m: if self.mode == 1 { 2 } else { 3 },
             radius: self.radius,
-            sigma: self.sigma,
+            sigma: self.spacing * 2.0 * self.radius / REST,
             epsilon: self.epsilon,
             cutoff: self.cutoff,
             max_force: self.max_force,
@@ -101,16 +135,17 @@ impl Config {
         merge: f32,
     ) -> Self {
         const FRAME: f32 = 0.016;
+        let standard = Physics::default();
         Self {
             epsilon: epsilon / FRAME,
-            sigma,
+            spacing: sigma * REST / (2.0 * standard.radius),
             cutoff,
             max_force: max_force / FRAME,
             substeps,
             damping: -keep.ln() / FRAME,
             spring: spring / FRAME,
             merge_secs: merge,
-            ..Self::default()
+            ..Self::from_physics(standard)
         }
     }
 }
@@ -122,7 +157,7 @@ impl Tunable for Config {
         s.group("Rules").choice("mode", "Merge size m", &["Bonded (3)", "Unbonded (2)"], |c| &mut c.mode);
         s.group("Cohesion (Lennard-Jones)")
             .float("epsilon", "Cohesion strength ε", "u²/s²", 0.0..=5000.0, 5.0, |c| &mut c.epsilon)
-            .float("sigma", "Pair size σ (rest ≈ 1.12 σ)", "u", 5.0..=120.0, 0.5, |c| &mut c.sigma)
+            .float("spacing", "Pair spacing", "× diameter", 0.5..=2.0, 0.01, |c| &mut c.spacing)
             .float("cutoff", "Range", "× σ", 1.0..=10.0, 0.1, |c| &mut c.cutoff)
             .float("max_force", "Force cap per pair", "u/s²", 1000.0..=2_000_000.0, 1000.0, |c| &mut c.max_force);
         s.group("Motion")
@@ -155,6 +190,7 @@ impl Tunable for Config {
 
     fn presets() -> Vec<(&'static str, Self)> {
         vec![
+            ("Standard", Self::from_physics(Physics::default())),
             // Tuned for the spec's launch, where a launched blob feels the same
             // fluid as the clump: lighter damping so it visibly travels (about
             // 0.4 s to contact), a well that gathers strays in about a second,
@@ -168,7 +204,7 @@ impl Tunable for Config {
                     max_speed: 3000.0,
                     touch: 1.2,
                     launch_reach: 0.9,
-                    ..Self::default()
+                    ..Self::from_physics(Physics::default())
                 },
             ),
             ("Light / Flowey", Self::fluid(1.2, 38.0, 2.0, 1200.0, 3, 0.94, 0.05, 0.16)),
