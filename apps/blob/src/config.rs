@@ -1,5 +1,6 @@
 //! Every tunable, mirroring `blob::Physics`. `Default` holds the shipped
-//! values; paste Ethan's "Copy values" here. The presets are the old build's,
+//! values; paste Ethan's "Copy values" here. "Spec fluid" is tuned for the
+//! spec's launch; the rest are the old build's,
 //! converted from its per-16 ms units: they set the fluid, not the well or the
 //! launch.
 
@@ -154,6 +155,22 @@ impl Tunable for Config {
 
     fn presets() -> Vec<(&'static str, Self)> {
         vec![
+            // Tuned for the spec's launch, where a launched blob feels the same
+            // fluid as the clump: lighter damping so it visibly travels (about
+            // 0.4 s to contact), a well that gathers strays in about a second,
+            // and gentler caps. Measured with `cargo run -p blob --example feel`.
+            (
+                "Spec fluid",
+                Self {
+                    damping: 2.0,
+                    well: 1200.0,
+                    max_force: 20_000.0,
+                    max_speed: 3000.0,
+                    touch: 1.2,
+                    launch_reach: 0.9,
+                    ..Self::default()
+                },
+            ),
             ("Light / Flowey", Self::fluid(1.2, 38.0, 2.0, 1200.0, 3, 0.94, 0.05, 0.16)),
             ("Thick Liquid", Self::fluid(9.0, 34.0, 3.5, 3000.0, 4, 0.72, 0.22, 0.34)),
             ("Clay Clumps", Self::fluid(18.0, 31.0, 1.8, 6000.0, 6, 0.55, 0.55, 0.5)),
