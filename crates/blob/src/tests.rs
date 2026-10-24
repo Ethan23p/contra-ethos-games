@@ -312,3 +312,51 @@ fn seeding_no_two_blobs_start_overlapping() {
         }
     }
 }
+
+#[test]
+fn merging_a_launched_blob_landing_waits_the_delay_before_converging() {
+    let p = Physics { merge_delay: 0.2, ..calm() };
+    let mut f = Field::new();
+    row(&mut f, &[(0, 2), (0, 2), (0, 2)], 39.0);
+    f.blobs[2].launched = true;
+    run(&mut f, &p, 0.15);
+    assert!(f.merges.is_empty(), "still under ordinary physics");
+    assert_eq!(f.pending.len(), 1);
+    run(&mut f, &p, 1.0);
+    assert_eq!(values(&f), vec![4]);
+}
+
+#[test]
+fn merging_without_a_launched_blob_starts_at_once_whatever_the_delay() {
+    let p = Physics { merge_delay: 0.2, ..calm() };
+    let mut f = Field::new();
+    row(&mut f, &[(0, 2), (0, 2), (0, 2)], 39.0);
+    f.step(&p, DT);
+    assert_eq!(f.merges.len(), 1);
+}
+
+/// A bonded pair, and a launched blob that lands beside it and ricochets.
+fn ricochet(hold: f32) -> Field {
+    let p = Physics { merge_delay: 0.15, merge_hold: hold, ..calm() };
+    let mut f = Field::new();
+    row(&mut f, &[(0, 2), (0, 2)], 39.0);
+    run(&mut f, &p, 0.05);
+    let id = f.add(0, 2, Vec2::new(19.5 + 39.0, 0.0));
+    let k = f.blobs.iter().position(|b| b.id == id).unwrap();
+    f.blobs[k].launched = true;
+    f.blobs[k].vel = Vec2::new(400.0, 0.0);
+    run(&mut f, &p, 0.25);
+    f
+}
+
+#[test]
+fn merging_a_launched_blob_that_ricochets_within_the_hold_distance_still_merges() {
+    let f = ricochet(2.5);
+    assert!(f.merges.len() == 1 || values(&f) == vec![4], "{:?}", values(&f));
+}
+
+#[test]
+fn merging_a_launched_blob_that_ricochets_past_the_hold_distance_is_let_go() {
+    let f = ricochet(1.0);
+    assert!(f.merges.is_empty() && values(&f) == vec![2, 2, 2], "{:?}", values(&f));
+}

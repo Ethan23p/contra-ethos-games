@@ -26,6 +26,8 @@ pub struct Config {
     pub spring: f32,
     pub bond_rest: f32,
     pub touch: f32,
+    pub merge_delay: f32,
+    pub merge_hold: f32,
     pub merge_secs: f32,
     pub merge_push: f32,
     pub ring: f32,
@@ -58,6 +60,8 @@ impl Default for Config {
             spring: 9.5,
             bond_rest: 1.05,
             touch: 1.2,
+            merge_delay: 0.12,
+            merge_hold: 1.75,
             merge_secs: 0.28,
             merge_push: 150.0,
             ring: 195.0,
@@ -86,6 +90,8 @@ impl Config {
             spring: p.spring,
             bond_rest: p.bond_rest,
             touch: p.touch,
+            merge_delay: p.merge_delay,
+            merge_hold: p.merge_hold,
             merge_secs: p.merge_secs,
             merge_push: p.merge_push,
             ring: p.ring,
@@ -112,6 +118,8 @@ impl Config {
             spring: self.spring,
             bond_rest: self.bond_rest,
             touch: self.touch,
+            merge_delay: self.merge_delay,
+            merge_hold: self.merge_hold,
             merge_secs: self.merge_secs,
             merge_push: self.merge_push,
             ring: self.ring,
@@ -173,14 +181,11 @@ impl Tunable for Config {
             .float("bond_rest", "Bond rest length", "× diameter", 0.5..=3.0, 0.01, |c| &mut c.bond_rest)
             .float("touch", "Touch distance", "× diameter", 0.8..=2.0, 0.01, |c| &mut c.touch)
             .toggle("show_bonds", "Show bonds", |c| &mut c.show_bonds);
-        s.group("Merging").float("merge_secs", "Convergence time", "s", 0.02..=3.0, 0.01, |c| &mut c.merge_secs).float(
-            "merge_push",
-            "Push on neighbours",
-            "u/s",
-            0.0..=3000.0,
-            10.0,
-            |c| &mut c.merge_push,
-        );
+        s.group("Merging")
+            .float("merge_delay", "Delay after a launch lands", "s", 0.0..=2.0, 0.01, |c| &mut c.merge_delay)
+            .float("merge_hold", "Ricochet hold during the delay", "× touch", 1.0..=6.0, 0.05, |c| &mut c.merge_hold)
+            .float("merge_secs", "Convergence time", "s", 0.02..=3.0, 0.01, |c| &mut c.merge_secs)
+            .float("merge_push", "Push on neighbours", "u/s", 0.0..=3000.0, 10.0, |c| &mut c.merge_push);
         s.group("Field")
             .float("radius", "Blob radius", "u", 4.0..=60.0, 0.5, |c| &mut c.radius)
             .float("ring", "Launcher ring radius", "u", 100.0..=600.0, 5.0, |c| &mut c.ring)

@@ -15,7 +15,7 @@ mod rng;
 #[cfg(test)]
 mod tests;
 
-pub use field::{Blob, Event, Field, Merge, merged_value};
+pub use field::{Blob, Event, Field, Merge, Pending, merged_value};
 pub use rng::Rng;
 
 /// Colour classes. Only identical blobs (same group, same value) interact.
@@ -55,6 +55,12 @@ pub struct Physics {
     /// Blobs touch within this many diameters, centre to centre.
     pub touch: f32,
 
+    /// How long a neighborhood that reached m waits under ordinary physics
+    /// before it converges, so a launch's jolt carries through (s).
+    pub merge_delay: f32,
+    /// During the delay, members stay in while within this many touch
+    /// distances of another member, so a blob that ricochets off still merges.
+    pub merge_hold: f32,
     /// The gloopy convergence: roughly how long a merge takes (s).
     pub merge_secs: f32,
     /// Speed the merged blob gives the blobs around it (units/s), fading to
@@ -92,6 +98,8 @@ impl Default for Physics {
             spring: 9.4,
             bond_rest: 1.05,
             touch: 1.1,
+            merge_delay: 0.0,
+            merge_hold: 1.5,
             merge_secs: 0.28,
             merge_push: 150.0,
             ring: 280.0,

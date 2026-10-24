@@ -26,6 +26,8 @@ fn physics(args: &[String]) -> Physics {
             "spring" => p.spring = v,
             "bond_rest" => p.bond_rest = v,
             "touch" => p.touch = v,
+            "merge_delay" => p.merge_delay = v,
+            "merge_hold" => p.merge_hold = v,
             "merge_secs" => p.merge_secs = v,
             "merge_push" => p.merge_push = v,
             "ring" => p.ring = v,
