@@ -5,14 +5,17 @@
 //! A [`Tuner`] holds the **current** values the game reads (e.g.
 //! `tuner.current.gravity`) and a list of **profiles**: named value sets.
 //! "Shipped" (the code's `Default`) and the game's presets are built in; the
-//! player adds their own. Profiles can be kept on the device, and one can be
-//! the default the game starts with. Any number of fields can be **pinned**:
+//! player adds their own, which are kept on the device. One profile can be the
+//! **device default** (what this device starts with) and one can be marked
+//! **to ship** (what Ethan intends as everyone's default; its values go into
+//! the config's `Default` by hand). Any number of fields can be **pinned**:
 //! pinned fields can be shown alone and stay reachable in a small floating
 //! widget while the panel is shut. The panel's layout lives in `panel.rs`; the
 //! cards and the option island are drawn here.
 //!
-//! Profiles, pins and the default persist (localStorage on the web, a file
-//! natively); the current values don't, so a reload starts from the default.
+//! Profiles, pins and both marks persist (localStorage on the web, a file
+//! natively); the current values don't, so a reload starts from the device
+//! default.
 
 use egui::{Color32, RichText, Ui};
 
@@ -155,8 +158,6 @@ pub struct Profile<C> {
     pub values: C,
     /// Shipped and the game's presets: always there, never overwritten.
     pub builtin: bool,
-    /// Kept on this device across reloads.
-    pub keep: bool,
 }
 
 /// What the runner's panel needs from a game's tuner, whatever its config type.
@@ -165,7 +166,7 @@ pub trait Config {
     fn field(&mut self, ui: &mut Ui);
     /// The option island: profiles and what to do with them.
     fn island(&mut self, ui: &mut Ui);
-    /// The floating widget's contents: compact cards of the pinned fields.
+    /// The floating widget's contents: the pinned fields' cards.
     fn widget(&mut self, ui: &mut Ui);
     fn has_pins(&self) -> bool;
 }
@@ -179,6 +180,8 @@ pub struct Tuner<C: Tunable> {
     pinned_only: bool,
     /// The profile loaded at startup on this device.
     startup: Option<String>,
+    /// The profile Ethan means to ship as everyone's default.
+    ship: Option<String>,
     picking: bool,
     persist: bool,
     notice: Option<(String, f64)>,
@@ -205,9 +208,9 @@ impl<C: Tunable> Tuner<C> {
     pub fn unsaved() -> Self {
         let mut schema = Schema { fields: Vec::new(), group: "General" };
         C::schema(&mut schema);
-        let mut profiles = vec![Profile { name: "Shipped".into(), values: C::default(), builtin: true, keep: true }];
+        let mut profiles = vec![Profile { name: "Shipped".into(), values: C::default(), builtin: true }];
         for (name, values) in C::presets() {
-            profiles.push(Profile { name: name.into(), values, builtin: true, keep: true });
+            profiles.push(Profile { name: name.into(), values, builtin: true });
         }
         Self {
             current: C::default(),
@@ -217,6 +220,7 @@ impl<C: Tunable> Tuner<C> {
             selected: 0,
             pinned_only: false,
             startup: None,
+            ship: None,
             picking: false,
             persist: false,
             notice: None,
@@ -233,14 +237,17 @@ impl<C: Tunable> Tuner<C> {
         apply_values(&self.fields, &mut self.current, text);
     }
 
-    /// Pins, the default and the kept profiles, as text.
+    /// Pins, both marks and the player's profiles, as text.
     fn store_text(&mut self) -> String {
         let pins: Vec<&str> = self.fields.iter().zip(&self.pinned).filter(|(_, p)| **p).map(|(f, _)| f.id).collect();
         let mut text = format!("pins = {}\n", pins.join(", "));
         if let Some(name) = &self.startup {
             text += &format!("default = {name}\n");
         }
-        for p in self.profiles.iter_mut().filter(|p| !p.builtin && p.keep) {
+        if let Some(name) = &self.ship {
+            text += &format!("ship = {name}\n");
+        }
+        for p in self.profiles.iter_mut().filter(|p| !p.builtin) {
             text += &format!("[profile {}]\n{}", p.name, values_text(&self.fields, &mut p.values));
         }
         text
@@ -250,7 +257,7 @@ impl<C: Tunable> Tuner<C> {
         let mut profile: Option<usize> = None;
         for line in text.lines() {
             if let Some(name) = line.strip_prefix("[profile ").and_then(|l| l.strip_suffix(']')) {
-                profile = Some(self.add_profile(name, C::default(), true));
+                profile = Some(self.add_profile(name, C::default()));
                 continue;
             }
             let Some((key, value)) = line.split_once('=') else { continue };
@@ -265,6 +272,7 @@ impl<C: Tunable> Tuner<C> {
                     }
                 }
                 None if key == "default" => self.startup = Some(value.to_string()),
+                None if key == "ship" => self.ship = Some(value.to_string()),
                 None => {}
             }
         }
@@ -283,14 +291,14 @@ impl<C: Tunable> Tuner<C> {
 
     /// Adds a profile, or overwrites the player's own one of that name.
     /// Returns its index.
-    fn add_profile(&mut self, name: &str, values: C, keep: bool) -> usize {
+    fn add_profile(&mut self, name: &str, values: C) -> usize {
         if let Some(i) = self.profiles.iter().position(|p| p.name == name) {
             if !self.profiles[i].builtin {
                 self.profiles[i].values = values;
             }
             return i;
         }
-        self.profiles.push(Profile { name: name.into(), values, builtin: false, keep });
+        self.profiles.push(Profile { name: name.into(), values, builtin: false });
         self.profiles.len() - 1
     }
 
@@ -367,12 +375,13 @@ impl<C: Tunable> Config for Tuner<C> {
                     let p = &self.profiles[i];
                     let mut label = p.name.clone();
                     if self.startup.as_deref() == Some(p.name.as_str()) {
-                        label += " · default";
+                        label += " · device default";
+                    }
+                    if self.ship.as_deref() == Some(p.name.as_str()) {
+                        label += " · to ship";
                     }
                     if p.builtin {
                         label += " · built-in";
-                    } else if !p.keep {
-                        label += " · this session";
                     }
                     if ui.selectable_label(i == self.selected, label).clicked() {
                         self.selected = i;
@@ -383,8 +392,9 @@ impl<C: Tunable> Config for Tuner<C> {
                     let suggested = format!("Profile {}", self.profiles.iter().filter(|p| !p.builtin).count() + 1);
                     if let Some(name) = ask_name(&suggested) {
                         let values = self.current.clone();
-                        self.selected = self.add_profile(&name, values, false);
+                        self.selected = self.add_profile(&name, values);
                         self.say(ui, format!("Made \"{name}\" from the current values."));
+                        dirty = true;
                     }
                     self.picking = false;
                 }
@@ -426,24 +436,27 @@ impl<C: Tunable> Config for Tuner<C> {
                 dirty = true;
             }
         });
+        let half = [(width - ui.spacing().item_spacing.x) / 2.0, ROW];
+        let is_startup = self.startup.as_deref() == Some(name.as_str());
+        let is_ship = self.ship.as_deref() == Some(name.as_str());
         ui.horizontal(|ui| {
-            let mut keep = profile.keep;
-            if ui.add_enabled(!builtin, egui::Checkbox::new(&mut keep, "Keep on this device")).changed() {
-                profile.keep = keep;
+            let label = "Device default";
+            if ui.add(egui::Button::new(label).selected(is_startup).min_size(half.into())).clicked() {
+                self.startup = if is_startup { None } else { Some(name.clone()) };
+                note = Some(if is_startup {
+                    "This device starts from Shipped again.".into()
+                } else {
+                    format!("This device now starts from \"{name}\".")
+                });
                 dirty = true;
             }
-        });
-        let is_default = self.startup.as_deref() == Some(name.as_str());
-        ui.horizontal(|ui| {
-            let label = if is_default { "Default (copy again)" } else { "Make default" };
-            if ui.add(egui::Button::new(label).min_size([width, ROW].into())).clicked() {
-                let p = &mut self.profiles[self.selected];
-                p.keep = true;
-                let text = values_text(&self.fields, &mut p.values);
+            let label = if is_ship { "To ship (copy)" } else { "Mark to ship" };
+            if ui.add(egui::Button::new(label).selected(is_ship).min_size(half.into())).clicked() {
+                let text = values_text(&self.fields, &mut self.profiles[self.selected].values);
                 ui.ctx().copy_text(text);
-                self.startup = Some(name.clone());
+                self.ship = Some(name.clone());
                 note = Some(format!(
-                    "\"{name}\" now loads first on this device. Its values are copied: send them to Claude to ship them for everyone."
+                    "\"{name}\" is marked to ship and its values are copied: send them to Claude to make them everyone's default."
                 ));
                 dirty = true;
             }
@@ -463,14 +476,21 @@ impl<C: Tunable> Config for Tuner<C> {
     }
 
     fn widget(&mut self, ui: &mut Ui) {
-        let Self { fields, pinned, current, .. } = self;
+        let Self { fields, pinned, current, profiles, selected, .. } = self;
+        let profile = &mut profiles[*selected];
+        let mut pins_changed = false;
         egui::ScrollArea::vertical().max_height(ui.ctx().content_rect().height() * 0.5).show(ui, |ui| {
             for (i, field) in fields.iter().enumerate() {
                 if pinned[i] {
-                    compact(ui, field, current);
+                    let out =
+                        card(ui, field, current, Some((&profile.name, &mut profile.values)), Some(&mut pinned[i]));
+                    pins_changed |= out.pin_toggled;
                 }
             }
         });
+        if pins_changed {
+            self.save();
+        }
     }
 
     fn has_pins(&self) -> bool {
@@ -486,8 +506,8 @@ struct CardOut {
     pin_toggled: bool,
 }
 
-/// One parameter card: label, current value and pin; the selected profile's
-/// value (tap to use it); the control, with its range.
+/// One parameter card: label, then the current value, the selected profile's
+/// value in brackets (tap to use it) and the pin; the control, with its range.
 fn card<C>(
     ui: &mut Ui,
     field: &Field<C>,
@@ -499,7 +519,8 @@ fn card<C>(
     egui::Frame::new().fill(CARD).corner_radius(10.0).inner_margin(egui::Margin::symmetric(10, 8)).show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.horizontal(|ui| {
-            ui.label(RichText::new(field.label).strong()).on_hover_text(field.id);
+            // Values first, from the right; the label takes what's left and
+            // truncates rather than running under them.
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if let Some(pinned) = pinned
                     && pin_button(ui, *pinned).clicked()
@@ -507,68 +528,30 @@ fn card<C>(
                     *pinned = !*pinned;
                     out.pin_toggled = true;
                 }
+                // The selected profile's value in brackets; tap it to use it.
+                if let Some((name, values)) = profile {
+                    let theirs = field.get(values);
+                    let differs = (field.get(current) - theirs).abs() > 1e-4 * theirs.abs().max(1.0);
+                    let text = RichText::new(format!("({})", field.show(theirs))).color(DIM);
+                    if differs {
+                        let tip = format!("The value in {name}. Tap to use it.");
+                        if ui.add(egui::Button::new(text).frame(false)).on_hover_text(tip).clicked() {
+                            field.set(current, theirs);
+                        }
+                    } else {
+                        ui.label(text).on_hover_text(format!("Same as {name}."));
+                    }
+                }
                 ui.label(RichText::new(field.show(field.get(current))).color(ACCENT));
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    ui.add(egui::Label::new(RichText::new(field.label).strong()).truncate()).on_hover_text(field.label);
+                });
             });
         });
-        if let Some((name, values)) = profile {
-            let theirs = field.get(values);
-            let differs = (field.get(current) - theirs).abs() > 1e-4 * theirs.abs().max(1.0);
-            if differs {
-                let text = format!("{name}: {}   (use)", field.show(theirs));
-                if ui.add(egui::Button::new(RichText::new(text).small()).small()).clicked() {
-                    field.set(current, theirs);
-                }
-            } else {
-                ui.label(RichText::new(format!("{name}: same")).small().color(DIM));
-            }
-        }
         controls(ui, field, current);
     });
     ui.add_space(4.0);
     out
-}
-
-/// A pinned field in the floating widget: one row of name, value and nudges,
-/// so it covers as little of the game as possible.
-fn compact<C>(ui: &mut Ui, field: &Field<C>, current: &mut C) {
-    let nudge = |ui: &mut Ui, text: &str| ui.add(egui::Button::new(text).min_size([ROW, ROW].into())).clicked();
-    ui.horizontal(|ui| {
-        ui.label(RichText::new(field.label).small());
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| match &field.control {
-            Control::Float { get, min, max, step } => {
-                let v = get(current);
-                if nudge(ui, "+") {
-                    *v = (((*v + step) / step).round() * step).min(*max);
-                }
-                ui.label(RichText::new(field.show(*v as f64)).color(ACCENT));
-                if nudge(ui, "-") {
-                    *v = (((*v - step) / step).round() * step).max(*min);
-                }
-            }
-            Control::Int { get, min, max } => {
-                let v = get(current);
-                if nudge(ui, "+") {
-                    *v = (*v + 1).min(*max);
-                }
-                ui.label(RichText::new(field.show(*v as f64)).color(ACCENT));
-                if nudge(ui, "-") {
-                    *v = (*v - 1).max(*min);
-                }
-            }
-            Control::Toggle { get } => {
-                let v = get(current);
-                if ui.add(egui::Button::new(if *v { "On" } else { "Off" }).min_size([2.0 * ROW, ROW].into())).clicked() {
-                    *v = !*v;
-                }
-            }
-            Control::Choice { get, options } => {
-                let v = get(current);
-                if ui.add(egui::Button::new(options[*v]).min_size([2.0 * ROW, ROW].into())).clicked() {
-                    *v = (*v + 1) % options.len();
-                }
-            }
-        });
-    });
 }
 
 fn controls<C>(ui: &mut Ui, field: &Field<C>, current: &mut C) {
@@ -764,13 +747,13 @@ mod tests {
     #[test]
     fn kept_profiles_pins_and_default_round_trip() {
         let mut t = Tuner::<Config>::unsaved();
-        t.add_profile("Mine", Config { speed: 4.0, ..Config::default() }, true);
-        t.add_profile("Scratch", Config { speed: 6.0, ..Config::default() }, false);
+        t.add_profile("Mine", Config { speed: 4.0, ..Config::default() });
+        t.add_profile("Other", Config { speed: 6.0, ..Config::default() });
         t.pinned[0] = true;
         t.pinned[3] = true;
         t.startup = Some("Mine".into());
+        t.ship = Some("Other".into());
         let text = t.store_text();
-        assert!(!text.contains("Scratch"), "session-only profiles aren't saved");
         assert!(!text.contains("[profile Shipped]"), "built-ins aren't saved");
 
         let mut back = Tuner::<Config>::unsaved();
@@ -778,13 +761,17 @@ mod tests {
         assert_eq!(back.pinned, vec![true, false, false, true]);
         assert_eq!(back.current.speed, 4.0, "the default profile loads first");
         assert_eq!(back.profiles[back.selected].name, "Mine");
-        assert_eq!(back.profiles.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), ["Shipped", "Fast", "Mine"]);
+        assert_eq!(back.ship.as_deref(), Some("Other"));
+        assert_eq!(
+            back.profiles.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(),
+            ["Shipped", "Fast", "Mine", "Other"]
+        );
     }
 
     #[test]
     fn builtin_profiles_are_never_overwritten() {
         let mut t = Tuner::<Config>::unsaved();
-        let i = t.add_profile("Shipped", Config { speed: 7.0, ..Config::default() }, true);
+        let i = t.add_profile("Shipped", Config { speed: 7.0, ..Config::default() });
         assert_eq!(i, 0);
         assert_eq!(t.profiles[0].values.speed, 1.5);
     }

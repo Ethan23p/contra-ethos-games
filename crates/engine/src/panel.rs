@@ -19,7 +19,7 @@ const LONG_PRESS: f64 = 0.5;
 const PHONE: f32 = 40.0 * EM;
 const PANEL_WIDTH: f32 = 26.0 * EM;
 const ISLAND_WIDTH: f32 = 22.0 * EM;
-const WIDGET_WIDTH: f32 = 15.0 * EM;
+const WIDGET_WIDTH: f32 = 22.0 * EM;
 
 pub(crate) struct Panel {
     pub open: bool,

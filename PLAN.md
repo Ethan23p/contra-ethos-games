@@ -52,6 +52,7 @@ Why it's split this way:
 - [x] Dev tuning panel in egui: `Tunable` + `Tuner` (initial / default / current, presets, per-field reset, Copy values as text, saved to localStorage). Open with the dots top right or F1 (`tune.rs`).
 - [x] Config panel v2 (Ethan's flexible config panel spec): floating corner button, parameter cards with pins, option island with profiles (load/save all or pinned, keep on device, make default), pinned-cards widget. Fixes the freeze and input leaking of v1 (`panel.rs`, `tune.rs`).
 - [x] Practical pass on the dice settings: snapback is time + bounce instead of raw stiffness/damping (it could oscillate forever at zero damping); the pop glow stops growing past impact 4 (it swamped the board at high values). Mass-scaled durations keep their caps: weight is exponential, so a value-12 piece would turn for 1.35 s.
+- [x] Config panel to Ethan's revised spec: cards read `Label  current (profile)`, the device default and "to ship" are separate marks, pinned cards in the widget are the full cards. Ethan's tuned values shipped as the dice defaults.
 - [x] Layout standard: `engine::Screen` anchors and units; the dice score band is anchored to the top in ems with the play area fitted below; the panel is sized in ems; the pinned widget is compact rows at the top for dice (`App::config_widget_top`).
 - [x] Phone check of the Phase 1 sandbox: tap, drag, hold, panel, Copy values. Ethan's tuned gravity (420) is now the sandbox default.
 
