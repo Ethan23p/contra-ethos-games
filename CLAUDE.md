@@ -57,7 +57,7 @@ The workspace layout and the reasoning behind it are in `PLAN.md` (Architecture)
 - Ethan plays on a phone. Judge feel on a touch screen and under rapid input (spamming launches is a real strategy), not just on desktop.
 - Show, don't just tell. After a visual change, capture screenshots or a short recording and send them.
 - Ethan likes being offered two or three concrete design options with a recommendation, and dislikes skepticism without a reason behind it.
-- The environment is Windows with PowerShell 7 and Git Bash. Commit only when asked, and push only when asked.
+- The environment is Windows with PowerShell 7 and Git Bash. Commit and push (which deploys) when the changes are ones Ethan explicitly asked for and we're in close communication; never ship anything he isn't aware of without asking.
 
 ## Session protocol
 
