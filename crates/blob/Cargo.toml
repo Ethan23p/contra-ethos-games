@@ -4,3 +4,6 @@ description = "Blob Merge rules and physics: pure Rust, no rendering dependencie
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+
+[dependencies]
+glam.workspace = true

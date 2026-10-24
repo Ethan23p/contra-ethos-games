@@ -1,0 +1,15 @@
+[package]
+name = "blob-app"
+description = "Blob Merge: the field from crates/blob, drawn with the engine. A physics sandbox for now."
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "blob"
+path = "src/main.rs"
+
+[dependencies]
+engine.workspace = true
+blob.workspace = true
+web-time.workspace = true

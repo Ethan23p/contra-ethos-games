@@ -2,7 +2,7 @@
 
 The living plan for rebuilding Dice Merge and Blob Merge in Rust + WebGPU and publishing them on contra-ethos.com. Tick steps as they land, and log decisions at the bottom.
 
-**Current phase: 2, Dice Merge (playable; awaiting Ethan's feel pass).** `crates/dice` and `apps/dice` are built; the game is at play.contra-ethos.com/dice/ once pushed. Next step: Ethan plays it on his phone and tunes it in the panel; paste his Copy values into `apps/dice/src/config.rs`. Then phase 3, `crates/blob`.
+**Current phase: 3, Blob Merge (physics sandbox).** `crates/blob` has the field and its physics (Move, bonding, threshold and merging, Launch, Seed) with policy tests; `apps/blob` is a sandbox at play.contra-ethos.com/blob/ with every force in the config panel. Next step: Ethan tunes the fluid and the launch; then the rules (pool window, draw, scoring and combo, purge, nova, ending).
 
 ## Goal state
 
@@ -63,13 +63,16 @@ The discrete game comes first: it's the cheapest way to prove the spec → code 
 - [x] `apps/dice`: board, queue, drag-to-place with rotate, merge and gravity animation weighted by mass. Dice show pips up to 6 and digits from 7. The merge plays as the old build's pulse train: dice leave one at a time along the neighborhood, each landing rings, then the survivor pops. Placing mid-animation skips the rest of the last turn.
 - [x] Tunables for every policy constant, board size, gravity on/off and its direction, plus every timing and look constant (`apps/dice/src/config.rs`).
 - [x] Spec open experiment: a toggle so merges converge on the oldest die instead of the youngest (Rules panel).
-- [ ] Feel pass on the phone against the old build.
+- [x] Feel pass on the phone against the old build (Ethan, 2026-10-23).
 
 ### 3. Blob Merge
-- [ ] `crates/blob`: entities, then Move (Lennard-Jones forces, the well, damping, bond springs), Merge, Purge and Seed, at a fixed dt with substeps.
-- [ ] Policies with tests: threshold and m, bonding, merging (convergence on the shared centre, joins during convergence, bigger jumps for bigger merges), pool window, draw, scoring and combo, seeding and nova, ending.
+- [x] `crates/blob`: blobs, bonds, merges and the field; Move (Lennard-Jones with a soft core and force cap, the saturating well at the tracked centre, damping, bond springs), Merge (convergence on the shared centre, joins, the light push), Launch and Seed, at a fixed dt with substeps.
+- [ ] Purge (needs the pool).
+- [x] Policies with tests: motion, identity, threshold and m, bonding, merging (convergence on the shared centre, joins during convergence, bigger jumps for bigger merges), launching, seeding.
+- [ ] Policies with tests: pool window, draw, scoring and combo, nova, ending.
 - [ ] `apps/blob`: the launcher ring and aiming, near-instant reload, the gloopy merge look (likely a metaball or smooth-union SDF pass), the rim and the overflow warning.
-- [ ] Physics presets and live tuning.
+- [x] Physics presets and live tuning: every `Physics` constant in the panel; the old build's Light / Flowey, Thick Liquid and Clay Clumps as presets.
+- [ ] Physics sandbox (`apps/blob`): plain circles, bonds as bridges, aim and release to launch, a stand-in 1–8 draw. Awaiting Ethan's tuning.
 - [ ] Feel pass on the phone, including rapid-fire launching.
 
 ### 4. Publish
@@ -85,7 +88,7 @@ A separate undertaking under the same umbrella. It's plain JS + WGSL today, so j
 
 ## Open decisions
 
-- **Physics:** a custom integrator, ported from the spec, or a crate like `rapier2d`. I lean custom: the forces (Lennard-Jones, a saturating well, springs) are bespoke, and determinism matters.
+- None right now.
 
 ## Decision log
 
@@ -113,3 +116,6 @@ A separate undertaking under the same umbrella. It's plain JS + WGSL today, so j
 | 2026-10-23 | Dice show traditional pips up to 6, digits from 7. | Ethan's call. |
 | 2026-10-23 | Placing while a turn still animates jumps that animation to its end. | Rapid play never waits on animation, and the board on screen never disagrees with the rules for long. |
 | 2026-10-23 | The dice app's package is `dice-app` (binary `dice`), since the rules crate is `dice`. | Cargo package names must be unique in a workspace. |
+| 2026-10-23 | Blob physics: a custom integrator in `crates/blob`, not a physics crate. | The forces are bespoke (Lennard-Jones, a saturating well, bond springs), and determinism matters for tests. |
+| 2026-10-23 | Blob world units are the old build's pixels on a 600-unit field; its per-16 ms constants convert by ÷ 0.016 (damping: −ln(keep) ÷ 0.016). | The old presets carry over exactly as starting points. |
+| 2026-10-23 | The launch speed is set by its reach: speed = reach × ring × damping. | Under linear damping a blob coasts speed ÷ damping, so the launch lands where intended whatever the fluid preset. |
