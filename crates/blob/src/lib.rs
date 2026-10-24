@@ -55,10 +55,16 @@ pub struct Physics {
     /// Blobs touch within this many diameters, centre to centre.
     pub touch: f32,
 
-    /// How long a neighborhood that reached m waits under ordinary physics
-    /// before it converges, so a launch's jolt carries through (s).
+    /// How long a launched blob waits, from when it first touches anything,
+    /// before a merge it's in converges, so its jolt carries through (s).
     pub merge_delay: f32,
-    /// During the delay, members stay in while within this many touch
+    /// Whether that delay also holds every neighborhood that forms during it,
+    /// so the jolt can't trigger merges elsewhere in the clump first.
+    pub delay_clump: bool,
+    /// How long a blob made by a merge waits before merging again (s), on
+    /// top of the convergence it came from.
+    pub chain_delay: f32,
+    /// While a merge waits, members stay in while within this many touch
     /// distances of another member, so a blob that ricochets off still merges.
     pub merge_hold: f32,
     /// The gloopy convergence: roughly how long a merge takes (s).
@@ -99,6 +105,8 @@ impl Default for Physics {
             bond_rest: 1.05,
             touch: 1.1,
             merge_delay: 0.0,
+            delay_clump: false,
+            chain_delay: 0.0,
             merge_hold: 1.5,
             merge_secs: 0.28,
             merge_push: 150.0,

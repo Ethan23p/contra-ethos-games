@@ -360,3 +360,91 @@ fn merging_a_launched_blob_that_ricochets_past_the_hold_distance_is_let_go() {
     let f = ricochet(1.0);
     assert!(f.merges.is_empty() && values(&f) == vec![2, 2, 2], "{:?}", values(&f));
 }
+
+#[test]
+fn merging_a_launched_blob_that_grazes_another_colour_first_still_waits() {
+    let p = Physics { merge_delay: 0.3, ..calm() };
+    let mut f = Field::new();
+    f.add(1, 1, Vec2::new(0.0, 100.0));
+    let id = f.add(0, 2, Vec2::new(0.0, 139.0));
+    f.blobs[1].launched = true;
+    f.step(&p, DT);
+    // Then it rolls in beside two of its own.
+    row(&mut f, &[(0, 2), (0, 2)], 39.0);
+    let k = f.blobs.iter().position(|b| b.id == id).unwrap();
+    f.blobs[k].pos = Vec2::new(0.0, 39.0);
+    run(&mut f, &p, 0.2);
+    assert!(f.merges.is_empty(), "still within the delay");
+    run(&mut f, &p, 1.0);
+    assert!(values(&f).contains(&4), "{:?}", values(&f));
+}
+
+#[test]
+fn merging_with_the_delay_on_the_whole_clump_the_jolt_triggers_nothing_early() {
+    let p = Physics { merge_delay: 0.3, delay_clump: true, ..calm() };
+    let mut f = Field::new();
+    f.add(1, 1, Vec2::new(0.0, 200.0));
+    let id = f.add(0, 64, Vec2::new(0.0, 239.0));
+    f.blobs[1].launched = true;
+    f.step(&p, DT);
+    assert!(!f.blob(id).unwrap().launched);
+    // Elsewhere, three come together during the jolt.
+    row(&mut f, &[(2, 4), (2, 4), (2, 4)], 39.0);
+    run(&mut f, &p, 0.2);
+    assert!(f.merges.is_empty());
+    run(&mut f, &p, 1.0);
+    assert!(values(&f).contains(&8), "{:?}", values(&f));
+}
+
+#[test]
+fn merging_without_the_whole_clump_delay_merges_elsewhere_start_at_once() {
+    let p = Physics { merge_delay: 0.3, delay_clump: false, ..calm() };
+    let mut f = Field::new();
+    f.add(1, 1, Vec2::new(0.0, 200.0));
+    f.add(0, 64, Vec2::new(0.0, 239.0));
+    f.blobs[1].launched = true;
+    f.step(&p, DT);
+    row(&mut f, &[(2, 4), (2, 4), (2, 4)], 39.0);
+    f.step(&p, DT);
+    assert_eq!(f.merges.len(), 1);
+}
+
+#[test]
+fn merging_a_launched_blob_does_not_join_a_converging_merge_until_its_delay_ends() {
+    let p = Physics { merge_delay: 0.3, ..calm() };
+    let mut f = Field::new();
+    row(&mut f, &[(0, 2), (0, 2), (0, 2)], 39.0);
+    f.step(&p, DT);
+    assert_eq!(f.merges.len(), 1);
+    let id = f.add(0, 2, Vec2::new(0.0, 40.0));
+    let k = f.blobs.iter().position(|b| b.id == id).unwrap();
+    f.blobs[k].launched = true;
+    f.step(&p, DT);
+    assert!(f.blob(id).unwrap().merging.is_none());
+}
+
+#[test]
+fn merging_a_merged_blob_waits_the_chain_delay_before_merging_again() {
+    let p = Physics { chain_delay: 0.4, merge_push: 0.0, ..calm() };
+    let mut f = Field::new();
+    row(&mut f, &[(0, 2), (0, 2), (0, 2)], 39.0);
+    // Two 4s waiting just below and above where the new 4 will appear.
+    f.add(0, 4, Vec2::new(0.0, 39.0));
+    f.add(0, 4, Vec2::new(0.0, -39.0));
+    let mut made = None;
+    let mut began_after = None;
+    let mut t = 0.0;
+    while t < 2.0 {
+        f.step(&p, DT);
+        t += DT;
+        for e in f.take_events() {
+            match e {
+                Event::Merged { value: 4, .. } => made = Some(t),
+                Event::MergeBegan { .. } if made.is_some() => began_after = Some(t),
+                _ => {}
+            }
+        }
+    }
+    let (made, began) = (made.unwrap(), began_after.expect("the 4s merged in the end"));
+    assert!(began - made >= 0.4 - DT, "{made} → {began}");
+}

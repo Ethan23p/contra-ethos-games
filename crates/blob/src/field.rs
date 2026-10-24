@@ -15,9 +15,11 @@ pub struct Blob {
     pub vel: Vec2,
     /// The merge it's converging in, if any.
     pub merging: Option<u32>,
-    /// Launched and yet to touch anything: a merge it lands in waits out the
-    /// merge delay.
+    /// Launched and yet to touch anything.
     pub launched: bool,
+    /// Seconds before it may begin a merge: set when a launched blob lands
+    /// (the merge delay) and when a merge makes it (the chain delay).
+    pub wait: f32,
 }
 
 impl Blob {
@@ -35,15 +37,13 @@ pub struct Merge {
     pub age: f32,
 }
 
-/// A neighborhood that reached m by a launched blob landing, held under
-/// ordinary physics for the merge delay so the launch's jolt can carry
+/// A neighborhood that reached m while some of its blobs must still wait,
+/// held under ordinary physics until none do, so a launch's jolt carries
 /// through before it converges. Any identical blob that touches it meanwhile
 /// joins.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Pending {
     pub members: Vec<u32>,
-    /// Seconds since it formed.
-    pub age: f32,
 }
 
 /// What happened during a step, for presentation.
@@ -72,8 +72,11 @@ pub struct Field {
     /// Bonded pairs, smaller id first.
     pub bonds: Vec<(u32, u32)>,
     pub merges: Vec<Merge>,
-    /// Neighborhoods waiting out the merge delay.
+    /// Neighborhoods waiting out a delay.
     pub pending: Vec<Pending>,
+    /// Seconds left of the latest launch's jolt: neighborhoods that form
+    /// meanwhile wait it out too, when the delay covers the whole clump.
+    pub jolt: f32,
     /// Tracks the blobs' centre of mass; the well sits here.
     pub centre: Vec2,
     /// Since the last [`Field::take_events`].
@@ -102,7 +105,7 @@ impl Field {
     /// Adds a blob at rest. Returns its id.
     pub fn add(&mut self, group: u8, value: u32, pos: Vec2) -> u32 {
         let id = self.id();
-        self.blobs.push(Blob { id, group, value, pos, vel: Vec2::ZERO, merging: None, launched: false });
+        self.blobs.push(Blob { id, group, value, pos, vel: Vec2::ZERO, merging: None, launched: false, wait: 0.0 });
         id
     }
 
@@ -144,9 +147,10 @@ impl Field {
         for merge in &mut self.merges {
             merge.age += dt;
         }
-        for pending in &mut self.pending {
-            pending.age += dt;
+        for b in &mut self.blobs {
+            b.wait = (b.wait - dt).max(0.0);
         }
+        self.jolt = (self.jolt - dt).max(0.0);
         if !self.blobs.is_empty() {
             let mass = self.blobs.iter().map(|b| b.pos).sum::<Vec2>() / self.blobs.len() as f32;
             self.centre += (mass - self.centre) * (1.0 - (-p.centre_follow * dt).exp());
@@ -279,7 +283,9 @@ impl Field {
                 }
             }
             let blob = self.add(group, value, centre);
-            self.blobs.last_mut().unwrap().vel = vel;
+            let made = self.blobs.last_mut().unwrap();
+            made.vel = vel;
+            made.wait = p.chain_delay;
             self.events.push(Event::Merged { merge: merge.id, blob, value, count, at: centre });
         }
     }
@@ -290,9 +296,27 @@ impl Field {
         let touching = |a: &Blob, b: &Blob| a.identical(b) && a.pos.distance_squared(b.pos) < touch * touch;
         let n = self.blobs.len();
 
-        // An identical blob that touches a converging blob joins its merge.
+        // A launched blob lands when it first touches anything, of any colour:
+        // it waits out the merge delay, and so, if the delay covers the whole
+        // clump, does any neighborhood the jolt brings together.
         for i in 0..n {
-            if self.blobs[i].merging.is_some() {
+            if self.blobs[i].launched {
+                let at = self.blobs[i].pos;
+                if (0..n).any(|j| j != i && self.blobs[j].pos.distance_squared(at) < touch * touch) {
+                    let b = &mut self.blobs[i];
+                    b.launched = false;
+                    b.wait = b.wait.max(p.merge_delay);
+                    if p.delay_clump {
+                        self.jolt = self.jolt.max(p.merge_delay);
+                    }
+                }
+            }
+        }
+
+        // An identical blob that touches a converging blob joins its merge,
+        // once it's done waiting.
+        for i in 0..n {
+            if self.blobs[i].merging.is_some() || self.blobs[i].wait > 0.0 {
                 continue;
             }
             let join = (0..n).find_map(|j| {
@@ -340,11 +364,10 @@ impl Field {
             size[find(&mut root, i)] += 1;
         }
 
-        // A neighborhood that reaches m joins any pending neighborhood it
-        // overlaps. Otherwise it's held for the merge delay if a launched blob
-        // just landed in it, and merges now if not.
+        // A neighborhood that reaches m is held as pending, joining any
+        // pending neighborhood it overlaps.
         let m = p.m.max(2);
-        let mut groups: Vec<(usize, Vec<u32>, bool)> = Vec::new();
+        let mut groups: Vec<(usize, Vec<u32>)> = Vec::new();
         for i in 0..n {
             if self.blobs[i].merging.is_some() {
                 continue;
@@ -353,29 +376,24 @@ impl Field {
             if size[r] < m {
                 continue;
             }
-            let (id, launched) = (self.blobs[i].id, self.blobs[i].launched);
-            match groups.iter_mut().find(|(root, ..)| *root == r) {
-                Some((_, ids, l)) => {
-                    ids.push(id);
-                    *l |= launched;
-                }
-                None => groups.push((r, vec![id], launched)),
+            let b = &mut self.blobs[i];
+            b.wait = b.wait.max(self.jolt);
+            match groups.iter_mut().find(|(root, _)| *root == r) {
+                Some((_, ids)) => ids.push(b.id),
+                None => groups.push((r, vec![b.id])),
             }
         }
-        for (_, ids, launched) in groups {
+        for (_, ids) in groups {
             let mut overlapping =
                 self.pending.iter().enumerate().filter(|(_, h)| h.members.iter().any(|id| ids.contains(id)));
             let Some((first, _)) = overlapping.next() else {
-                let age = if launched { 0.0 } else { p.merge_delay };
-                self.pending.push(Pending { members: ids, age });
+                self.pending.push(Pending { members: ids });
                 continue;
             };
             let others: Vec<usize> = overlapping.map(|(k, _)| k).collect();
             for &k in others.iter().rev() {
                 let other = self.pending.remove(k);
-                let held = &mut self.pending[first];
-                held.age = held.age.max(other.age);
-                held.members.extend(other.members);
+                self.pending[first].members.extend(other.members);
             }
             let held = &mut self.pending[first];
             held.members.extend(ids);
@@ -383,13 +401,19 @@ impl Field {
             held.members.dedup();
         }
 
-        // When the delay is up, members still within the hold distance of one
-        // another (or bonded) merge whole, in groups of at least m; the rest
-        // go back to the field.
+        // Once none of its blobs must wait, members still within the hold
+        // distance of one another (or bonded) merge whole, in groups of at
+        // least m; the rest go back to the field. With nothing to wait for,
+        // that's at once.
         let hold = touch * p.merge_hold.max(1.0);
         let mut i = 0;
         while i < self.pending.len() {
-            if self.pending[i].age < p.merge_delay {
+            let waiting = self.pending[i]
+                .members
+                .iter()
+                .filter_map(|&id| self.index(id))
+                .any(|k| self.blobs[k].merging.is_none() && self.blobs[k].wait > 0.0);
+            if waiting {
                 i += 1;
                 continue;
             }
@@ -437,16 +461,6 @@ impl Field {
         }
         let merging: Vec<u32> = self.blobs.iter().filter(|b| b.merging.is_some()).map(|b| b.id).collect();
         self.bonds.retain(|(a, b)| !merging.contains(a) && !merging.contains(b));
-
-        // A launched blob has landed once it touches anything.
-        for i in 0..n {
-            if self.blobs[i].launched {
-                let at = self.blobs[i].pos;
-                if (0..n).any(|j| j != i && self.blobs[j].pos.distance_squared(at) < touch * touch) {
-                    self.blobs[i].launched = false;
-                }
-            }
-        }
 
         // Touching pairs bond, unless they're merging or about to.
         let held: Vec<u32> = self.pending.iter().flat_map(|h| h.members.iter().copied()).collect();

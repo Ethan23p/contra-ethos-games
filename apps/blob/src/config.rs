@@ -27,6 +27,8 @@ pub struct Config {
     pub bond_rest: f32,
     pub touch: f32,
     pub merge_delay: f32,
+    pub delay_clump: bool,
+    pub chain_delay: f32,
     pub merge_hold: f32,
     pub merge_secs: f32,
     pub merge_push: f32,
@@ -60,8 +62,10 @@ impl Default for Config {
             spring: 9.5,
             bond_rest: 1.05,
             touch: 1.2,
-            merge_delay: 0.12,
-            merge_hold: 1.75,
+            merge_delay: 0.42,
+            delay_clump: true,
+            chain_delay: 0.3,
+            merge_hold: 2.4,
             merge_secs: 0.28,
             merge_push: 150.0,
             ring: 195.0,
@@ -91,6 +95,8 @@ impl Config {
             bond_rest: p.bond_rest,
             touch: p.touch,
             merge_delay: p.merge_delay,
+            delay_clump: p.delay_clump,
+            chain_delay: p.chain_delay,
             merge_hold: p.merge_hold,
             merge_secs: p.merge_secs,
             merge_push: p.merge_push,
@@ -119,6 +125,8 @@ impl Config {
             bond_rest: self.bond_rest,
             touch: self.touch,
             merge_delay: self.merge_delay,
+            delay_clump: self.delay_clump,
+            chain_delay: self.chain_delay,
             merge_hold: self.merge_hold,
             merge_secs: self.merge_secs,
             merge_push: self.merge_push,
@@ -183,7 +191,9 @@ impl Tunable for Config {
             .toggle("show_bonds", "Show bonds", |c| &mut c.show_bonds);
         s.group("Merging")
             .float("merge_delay", "Delay after a launch lands", "s", 0.0..=2.0, 0.01, |c| &mut c.merge_delay)
-            .float("merge_hold", "Ricochet hold during the delay", "× touch", 1.0..=6.0, 0.05, |c| &mut c.merge_hold)
+            .toggle("delay_clump", "Delay holds the whole clump", |c| &mut c.delay_clump)
+            .float("chain_delay", "Chain delay after a merge", "s", 0.0..=3.0, 0.01, |c| &mut c.chain_delay)
+            .float("merge_hold", "Ricochet hold during a delay", "× touch", 1.0..=6.0, 0.05, |c| &mut c.merge_hold)
             .float("merge_secs", "Convergence time", "s", 0.02..=3.0, 0.01, |c| &mut c.merge_secs)
             .float("merge_push", "Push on neighbours", "u/s", 0.0..=3000.0, 10.0, |c| &mut c.merge_push);
         s.group("Field")
