@@ -7,10 +7,13 @@
 //! and blended in sRGB space (the surface format is non-sRGB on every platform),
 //! so what we pick is what appears, on desktop and in the browser.
 
+use std::ops::Range;
+
 use bytemuck::{Pod, Zeroable};
 use glam::Vec2;
 use wgpu::util::DeviceExt;
 
+use crate::goo::{GooInstance, GooPipeline};
 use crate::text::{FONT, Font, SPREAD};
 
 /// One shape or glyph, laid out exactly as the shader reads it.
@@ -73,17 +76,35 @@ impl Default for View {
     }
 }
 
+/// Which pipeline a run of draws goes through.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Layer {
+    Shapes,
+    Goo,
+}
+
 /// What an [`crate::App`] fills in each frame. Later calls draw on top.
 pub struct Shapes {
     pub clear: [f32; 4],
     /// Applied to everything pushed after it is set.
     pub view: View,
     pub(crate) instances: Vec<Instance>,
+    pub(crate) goo_instances: Vec<GooInstance>,
+    pub(crate) goo_members: Vec<[f32; 4]>,
+    /// Runs of instances in draw order, each through one pipeline.
+    pub(crate) batches: Vec<(Layer, Range<u32>)>,
 }
 
 impl Default for Shapes {
     fn default() -> Self {
-        Self { clear: rgb(0x111111), view: View::PIXELS, instances: Vec::new() }
+        Self {
+            clear: rgb(0x111111),
+            view: View::PIXELS,
+            instances: Vec::new(),
+            goo_instances: Vec::new(),
+            goo_members: Vec::new(),
+            batches: Vec::new(),
+        }
     }
 }
 
@@ -106,6 +127,7 @@ impl Shapes {
             fill: color,
             ..Zeroable::zeroed()
         });
+        self.mark(Layer::Shapes, start, start + 1);
         Styled { items: &mut self.instances[start..], pivot: v.to_screen(center), scale: v.scale }
     }
 
@@ -130,6 +152,7 @@ impl Shapes {
             });
             pen.x += g.advance * k;
         }
+        self.mark(Layer::Shapes, start, self.instances.len());
         Styled { items: &mut self.instances[start..], pivot, scale: v.scale }
     }
 
@@ -138,8 +161,21 @@ impl Shapes {
         FONT.width(text, size)
     }
 
+    /// Records that instances `start..end` of `layer` were just pushed,
+    /// extending the last batch when it's the same layer.
+    pub(crate) fn mark(&mut self, layer: Layer, start: usize, end: usize) {
+        let (start, end) = (start as u32, end as u32);
+        match self.batches.last_mut() {
+            Some((l, range)) if *l == layer && range.end == start => range.end = end,
+            _ => self.batches.push((layer, start..end)),
+        }
+    }
+
     pub(crate) fn clear_shapes(&mut self) {
         self.instances.clear();
+        self.goo_instances.clear();
+        self.goo_members.clear();
+        self.batches.clear();
     }
 }
 
@@ -225,6 +261,7 @@ pub(crate) struct ShapeRenderer {
     bind_group: wgpu::BindGroup,
     instances: wgpu::Buffer,
     capacity: usize,
+    goo: GooPipeline,
 }
 
 impl ShapeRenderer {
@@ -348,7 +385,8 @@ impl ShapeRenderer {
         });
 
         let capacity = 256;
-        Self { pipeline, globals, bind_group, instances: instance_buffer(device, capacity), capacity }
+        let goo = GooPipeline::new(device, format, &globals);
+        Self { pipeline, globals, bind_group, instances: instance_buffer(device, capacity), capacity, goo }
     }
 
     /// Records one pass that clears `target` and draws everything in `shapes`.
@@ -372,6 +410,7 @@ impl ShapeRenderer {
         if count > 0 {
             queue.write_buffer(&self.instances, 0, bytemuck::cast_slice(&shapes.instances));
         }
+        self.goo.upload(device, queue, &self.globals, shapes);
 
         let [r, g, b, a] = shapes.clear.map(f64::from);
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -387,11 +426,20 @@ impl ShapeRenderer {
             })],
             ..Default::default()
         });
-        if count > 0 {
-            pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &self.bind_group, &[]);
-            pass.set_vertex_buffer(0, self.instances.slice(..));
-            pass.draw(0..4, 0..count as u32);
+        let mut bound = None;
+        for (layer, range) in &shapes.batches {
+            if bound != Some(*layer) {
+                match layer {
+                    Layer::Shapes => {
+                        pass.set_pipeline(&self.pipeline);
+                        pass.set_bind_group(0, &self.bind_group, &[]);
+                        pass.set_vertex_buffer(0, self.instances.slice(..));
+                    }
+                    Layer::Goo => self.goo.bind(&mut pass),
+                }
+                bound = Some(*layer);
+            }
+            pass.draw(0..4, range.clone());
         }
     }
 }

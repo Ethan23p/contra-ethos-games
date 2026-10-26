@@ -47,6 +47,21 @@ pub struct Config {
     pub nova_bonus: i32,
     pub nova_blobs: i32,
     pub grace: f32,
+    /// Drawn size × the physical radius: touching blobs of different kinds
+    /// show a gap.
+    pub drawn: f32,
+    /// Look: how far apart identical surfaces start to fuse, × radius.
+    pub blend: f32,
+    pub link_width: f32,
+    pub outline: f32,
+    pub highlight: f32,
+    pub shading: f32,
+    pub glimmer: bool,
+    pub glimmer_period: f32,
+    pub glimmer_strength: f32,
+    pub sparkles: i32,
+    pub wobble: f32,
+    pub droplets: i32,
 }
 
 /// Pairs rest at 2^(1/6) σ.
@@ -118,6 +133,18 @@ impl Config {
             max_speed: p.max_speed,
             substeps: p.substeps as i32,
             show_bonds: true,
+            drawn: 0.9,
+            blend: 0.5,
+            link_width: 0.34,
+            outline: 0.06,
+            highlight: 0.38,
+            shading: 0.3,
+            glimmer: true,
+            glimmer_period: 3.2,
+            glimmer_strength: 0.6,
+            sparkles: 3,
+            wobble: 0.22,
+            droplets: 7,
             ceiling: r.ceiling as i32,
             window: r.window as i32,
             widen_every: r.widen_every as i32,
@@ -246,6 +273,20 @@ impl Tunable for Config {
             .float("ring", "Launcher ring radius", "u", 100.0..=600.0, 5.0, |c| &mut c.ring)
             .float("rim", "Rim radius", "u", 50.0..=600.0, 5.0, |c| &mut c.rim)
             .float("launch_reach", "Launch reach", "× ring", 0.0..=3.0, 0.05, |c| &mut c.launch_reach);
+        s.group("Look")
+            .float("drawn", "Drawn size", "× radius", 0.5..=1.5, 0.01, |c| &mut c.drawn)
+            .float("blend", "Goo blend", "× radius", 0.0..=2.0, 0.01, |c| &mut c.blend)
+            .float("link_width", "Bond tether width", "× radius", 0.0..=1.0, 0.01, |c| &mut c.link_width)
+            .float("outline", "Outline", "× radius", 0.0..=0.5, 0.005, |c| &mut c.outline)
+            .float("highlight", "Highlight", "", 0.0..=1.0, 0.01, |c| &mut c.highlight)
+            .float("shading", "Edge shading", "", 0.0..=1.5, 0.01, |c| &mut c.shading)
+            .float("wobble", "Merge pop wobble", "× size", 0.0..=1.0, 0.01, |c| &mut c.wobble)
+            .int("droplets", "Merge droplets", "", 0..=40, |c| &mut c.droplets);
+        s.group("Glimmer (peak blobs)")
+            .toggle("glimmer", "Glimmer", |c| &mut c.glimmer)
+            .float("glimmer_period", "Sheen every", "s", 0.3..=20.0, 0.1, |c| &mut c.glimmer_period)
+            .float("glimmer_strength", "Sheen and glint strength", "", 0.0..=1.0, 0.01, |c| &mut c.glimmer_strength)
+            .int("sparkles", "Glints per blob", "", 0..=12, |c| &mut c.sparkles);
     }
 
     fn presets() -> Vec<(&'static str, Self)> {

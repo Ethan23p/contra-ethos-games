@@ -4,6 +4,7 @@
 //! Everything a player sees is drawn from our own primitives (see CLAUDE.md), so
 //! this crate grows by adding primitives to [`Shapes`], not by wrapping UI kits.
 
+mod goo;
 mod gpu;
 mod input;
 mod panel;
@@ -16,6 +17,7 @@ pub mod tune;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod headless;
 
+pub use goo::Goo;
 pub use input::{GestureConfig, Input, Phase, Pointer};
 pub use runner::{App, Frame, run};
 pub use screen::{Anchor, EM, Screen};

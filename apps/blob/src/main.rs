@@ -1,6 +1,5 @@
-//! Blob Merge: the game from `crates/blob` drawn as plain circles, with every
-//! force and rule live in the config panel. Effects are placeholders until the
-//! gloopy look.
+//! Blob Merge: the game from `crates/blob`, drawn as goo (see `look`), with
+//! every force, rule and look constant live in the config panel.
 //!
 //! Move or drag to aim the launcher around the ring; release (or click) to
 //! launch.
@@ -9,6 +8,7 @@
 //! strip of a seeded field taking a few launches.
 
 mod config;
+mod look;
 
 use std::collections::HashMap;
 
@@ -17,14 +17,13 @@ use engine::glam::Vec2;
 use engine::{Anchor, App, Frame, Input, Phase, Screen, Shapes, Tuner, View, rgb, rgba};
 
 use config::Config;
+use look::{Birth, Drawn, Drops};
 
 const BG: u32 = 0x08090c;
 const LINE: u32 = 0x2c2f38;
 const DIM: u32 = 0x8b8f9c;
 const TEXT: u32 = 0xf2f4f8;
 const RED: u32 = 0xd9564f;
-/// The old build's group colours: azure, emerald, crimson.
-const GROUP: [u32; 3] = [0x38bdf8, 0x34d399, 0xfb7185];
 
 /// Height of the band at the top, in ems.
 const BAND: f32 = 3.5;
@@ -47,13 +46,17 @@ struct BlobApp {
     time: f32,
     /// When the game ended, so a tap can't restart it by accident.
     ended: Option<f32>,
+    /// Blobs still making their entrance, with when they were born.
+    born: HashMap<u32, (Birth, f32)>,
+    drops: Drops,
+    /// Randomness for effects only, apart from the game's.
+    fx: Rng,
 }
 
 enum Flash {
-    /// A merge finished: a ring, and the points it scored.
+    /// A merge finished: a splash, and the points it scored.
     Pop {
         at: Vec2,
-        group: u8,
         points: u64,
         combo: u32,
     },
@@ -67,14 +70,21 @@ enum Flash {
         at: Vec2,
         bonus: u64,
     },
+    /// A merge's splash ring, apart from the points so it can be brief.
+    Ring {
+        at: Vec2,
+        color: [f32; 4],
+        size: f32,
+    },
 }
 
 impl Flash {
     fn life(&self) -> f32 {
         match self {
             Flash::Pop { .. } => 0.8,
-            Flash::Purge { .. } => 0.35,
+            Flash::Purge { .. } => 0.5,
             Flash::Nova { .. } => 1.6,
+            Flash::Ring { .. } => 0.45,
         }
     }
 }
@@ -95,6 +105,9 @@ impl BlobApp {
             flashes: Vec::new(),
             time: 0.0,
             ended: None,
+            born: HashMap::new(),
+            drops: Drops(Vec::new()),
+            fx: Rng::new(seed ^ 0x5eed),
         };
         app.reset();
         app
@@ -105,7 +118,17 @@ impl BlobApp {
         self.game = Game::new(&c.physics(), c.rules(), self.rng.next_u64());
         self.prev.clear();
         self.flashes.clear();
+        self.drops.0.clear();
         self.ended = None;
+        // The opening blobs grow in, outward from the centre.
+        let centre = self.game.field.centre;
+        self.born = self
+            .game
+            .field
+            .blobs
+            .iter()
+            .map(|b| (b.id, (Birth::Spawn { delay: b.pos.distance(centre) / 700.0 }, self.time)))
+            .collect();
     }
 
     fn launch(&mut self) {
@@ -139,27 +162,6 @@ impl BlobApp {
     }
 }
 
-fn blob_color(group: u8, value: u32) -> [f32; 4] {
-    // Higher values lighten toward white, a step per doubling.
-    let k = (value.max(1).ilog2() as f32 * 0.07).min(0.6);
-    let base = rgb(GROUP[group as usize % GROUP.len()]);
-    [base[0] + (1.0 - base[0]) * k, base[1] + (1.0 - base[1]) * k, base[2] + (1.0 - base[2]) * k, 1.0]
-}
-
-/// Blobs draw a little inside their physical radius, so touching ones show a
-/// gap and bonds show as bridges across it.
-const DRAWN: f32 = 0.9;
-
-fn draw_blob(s: &mut Shapes, pos: Vec2, r: f32, group: u8, value: u32, alpha: f32) {
-    let r = r * DRAWN;
-    let mut color = blob_color(group, value);
-    color[3] = alpha;
-    s.circle(pos, r, color).outline(r * 0.08, rgba(0, 0.25 * alpha));
-    let text = value.to_string();
-    let size = r * if text.len() >= 3 { 0.62 } else { 0.85 };
-    s.text(pos, size, &text, rgba(0x101218, 0.85 * alpha));
-}
-
 impl App for BlobApp {
     fn input(&mut self, input: Input, _: &Frame) {
         if let Input::Pointer(p) = input {
@@ -187,14 +189,43 @@ impl App for BlobApp {
         self.prev = self.game.field.blobs.iter().map(|b| (b.id, b.pos)).collect();
         self.prev_centre = self.game.field.centre;
         self.game.step(&physics, dt);
+        let c = self.tuner.current.clone();
+        let r = c.radius * c.drawn;
         for e in self.game.take_events() {
             let flash = match e {
-                Event::Scored { blob, points, combo, at } => {
-                    let group = self.game.field.blob(blob).map_or(0, |b| b.group);
-                    Flash::Pop { at, group, points, combo }
+                Event::Merged { blob, count, at, .. } => {
+                    self.born.insert(blob, (Birth::Pop, self.time));
+                    let Some(b) = self.game.field.blob(blob) else { continue };
+                    let color = look::blob_color(b.group, b.value);
+                    let n = c.droplets.max(0) as usize * count.saturating_sub(1).min(3);
+                    self.drops.burst(&mut self.fx, at, r, n, (110.0, 260.0), (0.14, 0.28), color, self.time, 0.45);
+                    Flash::Ring { at, color, size: r * (1.0 + 0.25 * count as f32) }
                 }
-                Event::Purged { group, value, at, .. } => Flash::Purge { at, group, value },
-                Event::Nova { at, bonus, .. } => Flash::Nova { at, bonus },
+                Event::Scored { points, combo, at, .. } => Flash::Pop { at, points, combo },
+                Event::Purged { group, value, at, .. } => {
+                    let color = look::grey(look::blob_color(group, value), 0.6);
+                    self.drops.burst(&mut self.fx, at, r * 0.7, 5, (25.0, 70.0), (0.12, 0.2), color, self.time, 0.6);
+                    Flash::Purge { at, group, value }
+                }
+                Event::Nova { at, bonus, .. } => {
+                    self.drops.burst(
+                        &mut self.fx,
+                        at,
+                        r,
+                        22,
+                        (260.0, 560.0),
+                        (0.12, 0.26),
+                        look::gold(),
+                        self.time,
+                        0.8,
+                    );
+                    // The new seed grows in, outward from the last blob.
+                    for b in &self.game.field.blobs {
+                        let delay = 0.15 + b.pos.distance(at) / 900.0;
+                        self.born.insert(b.id, (Birth::Spawn { delay }, self.time));
+                    }
+                    Flash::Nova { at, bonus }
+                }
                 Event::Ended { .. } => {
                     self.ended = Some(self.time);
                     continue;
@@ -205,6 +236,8 @@ impl App for BlobApp {
         }
         let now = self.time;
         self.flashes.retain(|(f, t)| now - t < f.life());
+        self.drops.step(dt, now);
+        self.born.retain(|_, (b, t)| !b.done(now - *t));
     }
 
     fn frame(&mut self, f: &Frame, s: &mut Shapes) {
@@ -232,54 +265,86 @@ impl App for BlobApp {
         }
 
         let at = |id: u32, pos: Vec2| self.prev.get(&id).map_or(pos, |p| p.lerp(pos, a));
+        let now = self.time;
+        let drawn = r * c.drawn;
+        // Glimmer marks the peak once it's out of the launcher's reach, so it
+        // means something: at the start the peak is still in the pool.
+        let peak = self.game.peak();
+        let peak = if self.game.pool().last().is_some_and(|&top| peak > top) { peak } else { 0 };
 
-        let field = &self.game.field;
-        if c.show_bonds {
-            for &(x, y) in &field.bonds {
-                let (Some(bx), Some(by)) = (field.blob(x), field.blob(y)) else { continue };
-                let (p, q) = (at(bx.id, bx.pos), at(by.id, by.pos));
-                let d = q - p;
-                let color = blob_color(bx.group, bx.value);
-                s.rounded_rect((p + q) * 0.5, Vec2::new(d.length(), r * 0.6), r * 0.3, color).rotate(d.y.atan2(d.x));
-            }
-        }
-
+        // Under the blobs: splash rings and the nova's shockwave.
         for (flash, t) in &self.flashes {
-            let k = (self.time - t) / flash.life();
+            let k = (now - t) / flash.life();
+            let ease = 1.0 - (1.0 - k).powi(3);
             match *flash {
-                Flash::Pop { at, group, .. } => {
-                    let mut color = rgb(GROUP[group as usize % GROUP.len()]);
-                    color[3] = 0.6 * (1.0 - k);
-                    s.circle(at, r * (1.0 + 1.5 * k), rgba(0, 0.0)).outline(2.0, color);
-                }
-                Flash::Purge { at, group, value } => {
-                    draw_blob(s, at, r * (1.0 - k).max(0.01), group, value, 1.0 - k);
+                Flash::Ring { at, color, size } => {
+                    let fade = 1.0 - k;
+                    let mut glow = color;
+                    glow[3] = 0.35 * fade * fade;
+                    s.circle(at, size * (1.0 + 0.9 * ease), rgba(0, 0.0))
+                        .outline(drawn * 0.22 * fade + 0.5, glow)
+                        .soft(drawn * 0.18);
                 }
                 Flash::Nova { at, .. } => {
                     let fade = 1.0 - k;
-                    s.circle(at, r * (1.0 + 10.0 * k), rgba(0, 0.0)).outline(3.0 * fade + 0.5, rgba(TEXT, 0.8 * fade));
+                    let gold = look::gold();
+                    s.circle(at, drawn * (1.0 + 11.0 * ease), rgba(0, 0.0))
+                        .outline(drawn * 0.3 * fade + 0.5, [gold[0], gold[1], gold[2], 0.7 * fade])
+                        .soft(drawn * 0.25);
+                    let k2 = ((now - t - 0.12) / 1.2).clamp(0.0, 1.0);
+                    let ease2 = 1.0 - (1.0 - k2).powi(3);
+                    s.circle(at, drawn * (1.0 + 7.0 * ease2), rgba(0, 0.0)).outline(1.5, rgba(TEXT, 0.5 * (1.0 - k2)));
+                    // A flash where the last blob was.
+                    let f = ((now - t) / 0.3).min(1.0);
+                    let shine = look::shine();
+                    s.circle(at, drawn * (1.0 + 1.6 * f), [shine[0], shine[1], shine[2], 0.8 * (1.0 - f)]).soft(drawn);
                 }
+                Flash::Purge { at, group, value } => {
+                    // Deflates as it greys out.
+                    let color = look::grey(look::blob_color(group, value), k);
+                    let size = drawn * (1.0 - k * k).max(0.0);
+                    let mut st = look::style(&c, group, value, false, drawn);
+                    st.fill = [color[0], color[1], color[2], 1.0 - k * k];
+                    st.outline[3] *= 1.0 - k;
+                    s.goo(&[(at, size)], &[], &st);
+                }
+                Flash::Pop { .. } => {}
             }
         }
 
-        for b in &field.blobs {
-            let alpha = if b.merging.is_some() { 0.85 } else { 1.0 };
-            draw_blob(s, at(b.id, b.pos), r, b.group, b.value, alpha);
-        }
+        let field = &self.game.field;
+        let blobs: Vec<Drawn> = field
+            .blobs
+            .iter()
+            .filter_map(|b| {
+                let scale = self.born.get(&b.id).map_or(1.0, |&(birth, t)| birth.scale(now - t, c.wobble));
+                (scale > 0.01).then(|| Drawn {
+                    id: b.id,
+                    group: b.group,
+                    value: b.value,
+                    pos: at(b.id, b.pos),
+                    r: drawn * scale,
+                    merging: b.merging,
+                })
+            })
+            .collect();
+        let bonds: &[(u32, u32)] = if c.show_bonds { &field.bonds } else { &[] };
+        look::draw_field(s, &c, &blobs, bonds, peak, now);
+        self.drops.draw(s, now);
 
         if self.ended.is_none() {
             let (g, v) = self.game.queue[0];
-            draw_blob(s, launcher, r, g, v, 1.0);
+            look::draw_one(s, &c, launcher, drawn, g, v, v == peak, now);
         }
 
         // Points rise from where they were scored.
         for (flash, t) in &self.flashes {
-            let k = (self.time - t) / flash.life();
+            let k = (now - t) / flash.life();
             let (at, text, size) = match *flash {
-                Flash::Pop { at, points, combo, .. } if combo > 1 => (at, format!("+{points} ×{combo}"), r * 0.8),
+                Flash::Pop { at, points, combo } if combo > 1 => (at, format!("+{points} ×{combo}"), r * 0.8),
                 Flash::Pop { at, points, .. } => (at, format!("+{points}"), r * 0.8),
                 Flash::Nova { at, bonus } => (at, format!("NOVA +{bonus}"), r * 1.3),
-                Flash::Purge { .. } => continue,
+                _ => continue,
             };
             let ease = 1.0 - (1.0 - k).powi(3);
             s.text(at - Vec2::new(0.0, r * (1.2 + 1.5 * ease)), size, &text, rgba(TEXT, 1.0 - k * k));
@@ -300,7 +365,7 @@ impl App for BlobApp {
         s.text(left(s, size, &hint, 2.75), size, &hint, rgb(DIM));
         if let Some(&(g, v)) = g.queue.get(1) {
             let next = screen.at(Anchor::TOP_RIGHT, Vec2::new(-screen.em(2.0), screen.em(1.75)));
-            draw_blob(s, next, screen.em(1.0) / DRAWN, g, v, 1.0);
+            look::draw_one(s, &c, next, screen.em(1.0), g, v, v == peak, now);
             let size = screen.em(0.8);
             s.text(next - Vec2::new(screen.em(1.6) + s.text_width(size, "NEXT") * 0.5, 0.0), size, "NEXT", rgb(DIM));
         }
@@ -344,6 +409,33 @@ fn main() {
     #[cfg(not(target_arch = "wasm32"))]
     {
         let args: Vec<String> = std::env::args().collect();
+        if let Some(i) = args.iter().position(|a| a == "--snapshot-goo") {
+            // Close up: a bonded trio merging, a tethered pair, and the peak.
+            let path = args.get(i + 1).map_or("goo.png", String::as_str).to_string();
+            let mut app = BlobApp::new(Tuner::unsaved(), 7);
+            let c = &mut app.tuner.current;
+            (c.mode, c.ring, c.rim) = (0, 120.0, 90.0);
+            app.reset();
+            let f = &mut app.game.field;
+            *f = blob::Field::new();
+            for (g, v, x, y) in [
+                (0, 8, -30.0, -20.0),
+                (0, 8, 22.0, -20.0),
+                (0, 8, -4.0, 26.0),
+                (1, 4, 30.0, 62.0),
+                (1, 4, 82.0, 50.0),
+                (2, 32, -62.0, 52.0),
+                (2, 4, -20.0, 80.0),
+                (1, 16, 70.0, -40.0),
+            ] {
+                f.add(g, v, Vec2::new(x, y));
+            }
+            app.born.clear();
+            let times = [0.02, 0.15, 0.32, 0.6, 1.1];
+            engine::headless::snapshot_strip(&mut app, 520, 600, &times, path.as_ref());
+            println!("wrote {path}");
+            return;
+        }
         if let Some(i) = args.iter().position(|a| a == "--snapshot") {
             let path = args.get(i + 1).map_or("snapshot.png", String::as_str).to_string();
             let mut app = BlobApp::new(Tuner::unsaved(), 7);

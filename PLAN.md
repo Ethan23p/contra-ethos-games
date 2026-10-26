@@ -2,7 +2,7 @@
 
 The living plan for rebuilding Dice Merge and Blob Merge in Rust + WebGPU and publishing them on contra-ethos.com. Tick steps as they land, and log decisions at the bottom.
 
-**Current phase: 3, Blob Merge (look and feel).** `crates/blob` has the field, its physics and every spec rule (`Game`, `Rules`), with policy tests. `apps/blob` at play.contra-ethos.com/blob/ is playable end to end; Ethan's phone pass (2026-10-26) found the feel good, rapid fire included. Next: the gloopy merge look, hand-rolled effects and glimmer.
+**Current phase: 3, Blob Merge (look and feel).** `crates/blob` has the field, its physics and every spec rule (`Game`, `Rules`), with policy tests. `apps/blob` at play.contra-ethos.com/blob/ is playable end to end; Ethan's phone pass (2026-10-26) found the feel good, rapid fire included. The gloopy look, effects and glimmer are in (2026-10-26). Next: Ethan's phone pass on the look, then the overflow warning.
 
 ## Goal state
 
@@ -70,15 +70,16 @@ The discrete game comes first: it's the cheapest way to prove the spec → code 
 - [x] Purge: blobs below the pool's floor leave the field, unless they're merging or about to.
 - [x] Policies with tests: motion, identity, threshold and m, bonding, merging (convergence on the shared centre, joins during convergence, bigger jumps for bigger merges), launching, seeding.
 - [x] Policies with tests: pool window, draw, scoring and combo, nova, ending (`Game`, `Rules`).
-- [ ] `apps/blob`: the launcher ring and aiming, near-instant reload, the gloopy merge look (likely a metaball or smooth-union SDF pass), the rim and the overflow warning.
+- [x] The gloopy merge look: `engine::Goo`, a smooth-union SDF pass. Identical blobs fuse within the blend, merging blobs flow together, bonds draw as tethers; each pixel is drawn by its nearest circle only, so groups render once without seams, in one draw call (`goo.rs`, `goo.wgsl`, `apps/blob/src/look.rs`).
+- [ ] The overflow warning, beyond the rim's red pulse.
 - [x] Physics presets and live tuning: every `Physics` constant in the panel; the old build's Light / Flowey, Thick Liquid and Clay Clumps as presets.
 - [x] Physics sandbox (`apps/blob`): plain circles, bonds as bridges, aim and release to launch. Tuned by Ethan (2026-10-24).
 - [x] The rules in the app: score and combo readout, the pool, points rising from merges, purge and nova placeholders, the rim pulsing as a blob runs down the grace, game over and tap to play again.
 - [x] Feel pass on the phone, including rapid-fire launching (Ethan, 2026-10-26). Game over and its 6.5 s grace feel right.
 - [x] Pool feel: the floor rose a bit too quickly, so the pool now widens every 3 doublings instead of 6.
 - [x] Combo by merges, not time: it counts merges over the last 3 launch windows, replacing the 1.4 s reset.
-- [ ] Effects, hand-rolled rather than copied from the old build: merge pop, purge, nova.
-- [ ] Glimmer: blobs at the peak value get a gold motif, a shine and a glimmer that loops seamlessly (the old build's gradient sweep jumped when it looped).
+- [x] Effects, hand-rolled: a merge lands big and wobbles to size, with a splash ring and droplets; a purge greys and deflates, shedding drops; a nova flashes, sends a gold shockwave and droplets, and the new seed grows in outward. The opening seed grows in too.
+- [x] Glimmer: peak blobs get a gold rim, a sheen that sweeps across and waits out of sight before looping, and glints that move only while dark. Every look constant is in the panel's Look and Glimmer groups.
 
 ### 4. Publish
 - [ ] Release builds: size budget, loading screen, a message when WebGPU isn't available.
@@ -134,3 +135,5 @@ None right now.
 | 2026-10-26 | The pool's ceiling stays at half the peak; it widens every 3 doublings instead of 6. | Ethan's restatement describes the same shape; his floor felt like it rose too fast. |
 | 2026-10-26 | The combo is 1 plus the merge credit (n − 1 per merge) over the last 3 launch windows; a window runs from one launch to the moment before the next. Merges before the first launch count in an opening window. | Ethan: combo by merges, not time. Waiting never resets it, and spamming launches moves old merges out rather than inflating it. |
 | 2026-10-26 | Draw stays 1 / 1.25^i: over doubling values that is a power law, weight ∝ value^−0.32. | Ethan asked for a power law; the geometric weight already is one. |
+| 2026-10-26 | Glimmer shows only once the peak is above the pool; gold blobs keep their group colour, warmed, with a gold rim. | At the start the peak (8) is in the pool and half the field would glimmer. Only identical blobs merge, so the group must stay readable. |
+| 2026-10-26 | Goo groups fuse identical blobs whose surfaces come within the blend, plus merging and bonded ones; other blobs keep their gap. | Fusing only what can merge keeps the look honest to the rules. |
