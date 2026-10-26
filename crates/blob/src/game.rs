@@ -18,8 +18,9 @@ pub struct Rules {
     pub falloff: f64,
     /// Queue length, the blob on the launcher included.
     pub queue: usize,
-    /// The combo resets to 1 after this long without a merge (s).
-    pub combo_secs: f32,
+    /// The combo counts merges over this many launches, the current one
+    /// included.
+    pub combo_launches: usize,
     /// Points for a nova.
     pub nova_bonus: u64,
     /// How many blobs a nova seeds.
@@ -33,10 +34,10 @@ impl Default for Rules {
         Self {
             ceiling: 8,
             window: 3,
-            widen_every: 6,
+            widen_every: 3,
             falloff: 1.25,
             queue: 2,
-            combo_secs: 1.4,
+            combo_launches: 3,
             nova_bonus: 2000,
             nova_blobs: 12,
             grace: 6.5,
@@ -46,7 +47,7 @@ impl Default for Rules {
 
 impl Rules {
     /// Pool window: the values the launcher may draw, lowest first. Ceiling =
-    /// max(8, peak ÷ 2); 3 + floor((log₂ peak − 3) ÷ 6) consecutive values
+    /// max(8, peak ÷ 2); 3 + floor((log₂ peak − 3) ÷ 3) consecutive values
     /// counting down from it, never below 2. Below a peak of 8 the window
     /// stays at 3 rather than narrowing.
     pub fn pool(&self, peak: u32) -> Vec<u32> {
@@ -65,8 +66,9 @@ pub struct Game {
     pub queue: Vec<(u8, u32)>,
     pub score: u64,
     pub combo: u32,
-    /// Seconds since the last merge, for the combo.
-    pub since_merge: f32,
+    /// Combo credit per launch window, oldest first, the current one last.
+    /// A window runs from one launch to the moment before the next.
+    pub windows: Vec<u32>,
     /// Blobs outside the rim, and for how long.
     pub outside: Vec<(u32, f32)>,
     pub over: bool,
@@ -86,7 +88,7 @@ impl Game {
             queue: Vec::new(),
             score: 0,
             combo: 1,
-            since_merge: 0.0,
+            windows: vec![0],
             outside: Vec::new(),
             over: false,
             rng,
@@ -144,6 +146,10 @@ impl Game {
         }
         let (group, value) = self.queue.remove(0);
         let id = self.field.launch(p, angle, group, value);
+        self.windows.push(0);
+        let excess = self.windows.len().saturating_sub(self.rules.combo_launches.max(1));
+        self.windows.drain(..excess);
+        self.combo = 1 + self.windows.iter().sum::<u32>();
         self.refill();
         Some(id)
     }
@@ -157,7 +163,7 @@ impl Game {
             self.events.extend(events);
             return;
         }
-        self.score(&events, dt);
+        self.score(&events);
         self.events.extend(events);
         self.purge();
         self.nova(p);
@@ -165,19 +171,17 @@ impl Game {
         self.watch_rim(p, dt);
     }
 
-    /// Scoring: a merge of n blobs raises the combo by n − 1, then scores the
-    /// resulting value × combo. The combo resets to 1 after a quiet spell.
-    fn score(&mut self, events: &[Event], dt: f32) {
-        self.since_merge += dt;
-        if self.since_merge >= self.rules.combo_secs {
-            self.combo = 1;
-        }
+    /// Scoring: a merge of n blobs credits n − 1 to the current launch
+    /// window, then scores the resulting value × combo. The combo is 1 plus
+    /// the credit over the last few launch windows, so waiting never resets
+    /// it, but launching moves old merges out of it.
+    fn score(&mut self, events: &[Event]) {
         for e in events {
             if let &Event::Merged { blob, value, count, at, .. } = e {
-                self.combo += count.saturating_sub(1) as u32;
+                *self.windows.last_mut().unwrap() += count.saturating_sub(1) as u32;
+                self.combo = 1 + self.windows.iter().sum::<u32>();
                 let points = value as u64 * self.combo as u64;
                 self.score += points;
-                self.since_merge = 0.0;
                 self.events.push(Event::Scored { blob, points, combo: self.combo, at });
             }
         }

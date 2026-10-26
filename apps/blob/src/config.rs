@@ -43,7 +43,7 @@ pub struct Config {
     pub widen_every: i32,
     pub falloff: f32,
     pub queue: i32,
-    pub combo_secs: f32,
+    pub combo_launches: i32,
     pub nova_bonus: i32,
     pub nova_blobs: i32,
     pub grace: f32,
@@ -123,7 +123,7 @@ impl Config {
             widen_every: r.widen_every as i32,
             falloff: r.falloff as f32,
             queue: r.queue as i32,
-            combo_secs: r.combo_secs,
+            combo_launches: r.combo_launches as i32,
             nova_bonus: r.nova_bonus as i32,
             nova_blobs: r.nova_blobs as i32,
             grace: r.grace,
@@ -137,7 +137,7 @@ impl Config {
             widen_every: self.widen_every.max(1) as u32,
             falloff: self.falloff as f64,
             queue: self.queue.max(1) as usize,
-            combo_secs: self.combo_secs,
+            combo_launches: self.combo_launches.max(1) as usize,
             nova_bonus: self.nova_bonus.max(0) as u64,
             nova_blobs: self.nova_blobs.max(1) as usize,
             grace: self.grace,
@@ -212,7 +212,7 @@ impl Tunable for Config {
             .int("widen_every", "Pool widens every", "doublings", 1..=20, |c| &mut c.widen_every)
             .float("falloff", "Draw falloff per step up", "×", 0.5..=4.0, 0.01, |c| &mut c.falloff)
             .int("queue", "Queue length", "", 1..=6, |c| &mut c.queue)
-            .float("combo_secs", "Combo resets after", "s", 0.1..=10.0, 0.05, |c| &mut c.combo_secs)
+            .int("combo_launches", "Combo counts over", "launches", 1..=20, |c| &mut c.combo_launches)
             .int("nova_bonus", "Nova bonus", "points", 0..=100_000, |c| &mut c.nova_bonus)
             .int("nova_blobs", "Nova seeds", "blobs", 1..=40, |c| &mut c.nova_blobs)
             .float("grace", "Grace outside the rim", "s", 0.5..=60.0, 0.1, |c| &mut c.grace);

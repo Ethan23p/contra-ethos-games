@@ -488,17 +488,17 @@ fn pool_window_opens_at_8_4_2() {
 
 #[test]
 fn pool_window_slides_up_with_the_ceiling_at_half_the_peak() {
-    let r = Rules::default();
+    let r = Rules { widen_every: 99, ..Rules::default() };
     assert_eq!(r.pool(32), vec![4, 8, 16]);
     assert_eq!(r.pool(256), vec![32, 64, 128]);
 }
 
 #[test]
-fn pool_window_widens_by_one_every_six_doublings() {
+fn pool_window_widens_by_one_every_three_doublings() {
     let r = Rules::default();
-    assert_eq!(r.pool(256).len(), 3);
-    assert_eq!(r.pool(512), vec![32, 64, 128, 256]);
-    assert_eq!(r.pool(1 << 15).len(), 5);
+    assert_eq!(r.pool(32).len(), 3);
+    assert_eq!(r.pool(64), vec![4, 8, 16, 32]);
+    assert_eq!(r.pool(512), vec![16, 32, 64, 128, 256]);
 }
 
 #[test]
@@ -548,12 +548,12 @@ fn draw_the_queue_holds_2_and_launching_moves_it_up() {
 fn draw_queued_values_the_pool_no_longer_allows_are_rerolled() {
     let p = calm();
     let mut blobs = bystanders();
-    blobs.push((0, 64, Vec2::new(0.0, 150.0)));
+    blobs.push((0, 128, Vec2::new(0.0, 150.0)));
     let mut g = game(&p, &blobs);
     g.queue = vec![(1, 2), (2, 16)];
     g.step(&p, DT);
     let pool = g.pool();
-    assert_eq!(pool, vec![8, 16, 32]);
+    assert_eq!(pool, vec![8, 16, 32, 64]);
     assert_eq!(g.queue[1], (2, 16), "allowed entries stay");
     assert_eq!(g.queue[0].0, 1, "a re-roll keeps the group");
     assert!(pool.contains(&g.queue[0].1));
@@ -590,12 +590,33 @@ fn scoring_merges_in_quick_succession_build_the_combo() {
     assert_eq!(g.score, 48 + 160);
 }
 
+/// Launches a blob and takes it straight back off, so only the launch
+/// window moves on.
+fn launch_blank(g: &mut Game, p: &Physics) {
+    let id = g.launch(p, 0.0).unwrap();
+    g.field.remove(id);
+}
+
 #[test]
-fn scoring_the_combo_resets_to_1_after_1_4_s_without_a_merge() {
+fn scoring_waiting_never_resets_the_combo() {
     let p = calm();
     let mut g = game(&p, &bystanders());
     trio(&mut g, 8, -150.0);
-    play(&mut g, &p, 2.0);
+    play(&mut g, &p, 10.0);
+    assert_eq!(g.combo, 3);
+}
+
+#[test]
+fn scoring_the_combo_counts_merges_over_the_last_3_launches() {
+    let p = calm();
+    let mut g = game(&p, &bystanders());
+    trio(&mut g, 8, -150.0);
+    play(&mut g, &p, 0.7);
+    launch_blank(&mut g, &p);
+    launch_blank(&mut g, &p);
+    // The merge's window is the oldest of the last 3: it still counts.
+    assert_eq!(g.combo, 3);
+    launch_blank(&mut g, &p);
     assert_eq!(g.combo, 1);
     trio(&mut g, 16, 150.0);
     play(&mut g, &p, 0.7);
@@ -606,22 +627,22 @@ fn scoring_the_combo_resets_to_1_after_1_4_s_without_a_merge() {
 fn purge_blobs_below_the_pool_leave_the_field() {
     let p = calm();
     let mut blobs = bystanders();
-    blobs.push((0, 64, Vec2::new(0.0, 150.0)));
+    blobs.push((0, 128, Vec2::new(0.0, 150.0)));
     let g = game(&p, &blobs);
-    // The pool is 8–32: the 2 and the 4 go, the 8 stays.
-    assert_eq!(values(&g.field), vec![8, 64]);
+    // The pool is 8–64: the 2 and the 4 go, the 8 stays.
+    assert_eq!(values(&g.field), vec![8, 128]);
 }
 
 #[test]
 fn purge_a_merging_blob_finishes_its_merge_first() {
     let p = calm();
     let mut blobs = bystanders();
-    blobs.push((0, 64, Vec2::new(0.0, 150.0)));
+    blobs.push((0, 128, Vec2::new(0.0, 150.0)));
     let mut g = game(&p, &blobs);
     trio(&mut g, 4, 0.0);
     // Below the floor, but they touch at once: the merge makes an 8, which stays.
     play(&mut g, &p, 1.0);
-    assert_eq!(values(&g.field), vec![8, 8, 64]);
+    assert_eq!(values(&g.field), vec![8, 8, 128]);
 }
 
 #[test]
