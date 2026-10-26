@@ -289,13 +289,13 @@ fn launching_an_unobstructed_blob_coasts_about_its_reach() {
 }
 
 #[test]
-fn seeding_opens_with_10_to_13_blobs_of_values_1_to_8() {
+fn seeding_opens_with_10_to_13_blobs_of_values_2_to_8() {
     let p = Physics::default();
     for seed in 0..20 {
         let mut f = Field::new();
         f.seed(&p, &mut Rng::new(seed));
         assert!((10..=13).contains(&f.blobs.len()));
-        assert!(f.blobs.iter().all(|b| [1, 2, 4, 8].contains(&b.value) && b.group < GROUPS));
+        assert!(f.blobs.iter().all(|b| [2, 4, 8].contains(&b.value) && b.group < GROUPS));
     }
 }
 

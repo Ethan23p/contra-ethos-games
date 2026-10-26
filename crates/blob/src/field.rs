@@ -145,11 +145,11 @@ impl Field {
         id
     }
 
-    /// Seed: 10–13 blobs of values 1–8 in random groups, packed loosely around
+    /// Seed: 10–13 blobs of values 2–8 in random groups, packed loosely around
     /// the centre on a sunflower spiral so none start overlapping.
     pub fn seed(&mut self, p: &Physics, rng: &mut Rng) {
         let count = 10 + rng.below(4);
-        self.scatter(p, rng, count, |rng| 1 << rng.below(4));
+        self.scatter(p, rng, count, |rng| 2 << rng.below(3));
     }
 
     /// Adds `count` blobs in random groups, values from `value`, around the

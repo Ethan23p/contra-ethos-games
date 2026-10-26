@@ -89,7 +89,7 @@ A separate undertaking under the same umbrella. It's plain JS + WGSL today, so j
 
 ## Open decisions
 
-- **Seeded 1s are purged at once.** Seeding opens with values 1–8, but the opening pool is 2–8, so Purge removes every seeded 1 on the first step. Options: seed from the opening pool (2–8), let the opening pool reach down to 1, or keep it (a few 1s vanish as the game starts).
+None right now.
 
 ## Decision log
 
@@ -125,3 +125,4 @@ A separate undertaking under the same umbrella. It's plain JS + WGSL today, so j
 | 2026-10-24 | Purge skips blobs that are merging or held for a merge; the merge finishes first. | Removing a blob mid-merge would cancel a merge the player already earned. |
 | 2026-10-24 | Nova seeds around the last blob; a field emptied outright (only possible by purging) reseeds as a new game, without the bonus. | The spec covers one blob remaining, not none. |
 | 2026-10-24 | Ending times each blob separately, by its centre's distance from the field centre; once over, the field keeps moving but the rules and launches stop. | Matches "any blob stays outside the rim for a continuous grace period". |
+| 2026-10-26 | Seed opens with values 2–8, not the spec's 1–8. | Seeded 1s fell below the opening pool and were purged at once; a 1 also stood out too much visually. |
