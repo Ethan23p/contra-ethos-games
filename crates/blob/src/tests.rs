@@ -502,9 +502,10 @@ fn pool_window_widens_by_one_every_six_doublings() {
 }
 
 #[test]
-fn pool_window_never_goes_below_1() {
-    let r = Rules { ceiling: 2, window: 5, ..Rules::default() };
-    assert_eq!(r.pool(2), vec![1, 2]);
+fn pool_window_never_goes_below_2() {
+    let r = Rules { ceiling: 4, window: 5, ..Rules::default() };
+    assert_eq!(r.pool(4), vec![2, 4]);
+    assert_eq!(Rules { ceiling: 1, ..r }.pool(1), vec![2]);
 }
 
 #[test]

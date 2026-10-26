@@ -2,7 +2,7 @@
 
 The living plan for rebuilding Dice Merge and Blob Merge in Rust + WebGPU and publishing them on contra-ethos.com. Tick steps as they land, and log decisions at the bottom.
 
-**Current phase: 3, Blob Merge (rules).** `crates/blob` has the field and its physics, and `Game` plays every spec rule on top (pool window, draw, scoring and combo, Purge, nova, ending), all with policy tests. `apps/blob` at play.contra-ethos.com/blob/ is playable end to end, with placeholder effects and every force and rule in the config panel. Next step: Ethan plays the rules on the phone and settles the open decision below; then the gloopy merge look and the overflow warning.
+**Current phase: 3, Blob Merge (look and feel).** `crates/blob` has the field, its physics and every spec rule (`Game`, `Rules`), with policy tests. `apps/blob` at play.contra-ethos.com/blob/ is playable end to end; Ethan's phone pass (2026-10-26) found the feel good, rapid fire included. Next: settle the pool and combo decisions below, then the gloopy merge look, hand-rolled effects and glimmer.
 
 ## Goal state
 
@@ -74,7 +74,11 @@ The discrete game comes first: it's the cheapest way to prove the spec → code 
 - [x] Physics presets and live tuning: every `Physics` constant in the panel; the old build's Light / Flowey, Thick Liquid and Clay Clumps as presets.
 - [x] Physics sandbox (`apps/blob`): plain circles, bonds as bridges, aim and release to launch. Tuned by Ethan (2026-10-24).
 - [x] The rules in the app: score and combo readout, the pool, points rising from merges, purge and nova placeholders, the rim pulsing as a blob runs down the grace, game over and tap to play again.
-- [ ] Feel pass on the phone, including rapid-fire launching.
+- [x] Feel pass on the phone, including rapid-fire launching (Ethan, 2026-10-26). Game over and its 6.5 s grace feel right.
+- [ ] Pool feel: the floor rises a bit too quickly; the widening is about right.
+- [ ] Combo by merges, not time: a new policy, replacing the 1.4 s reset (see Open decisions).
+- [ ] Effects, hand-rolled rather than copied from the old build: merge pop, purge, nova.
+- [ ] Glimmer: blobs at the peak value get a gold motif, a shine and a glimmer that loops seamlessly (the old build's gradient sweep jumped when it looped).
 
 ### 4. Publish
 - [ ] Release builds: size budget, loading screen, a message when WebGPU isn't available.
@@ -89,7 +93,8 @@ A separate undertaking under the same umbrella. It's plain JS + WGSL today, so j
 
 ## Open decisions
 
-None right now.
+- **Where the pool's top sits.** The spec and code put the ceiling at half the peak; Ethan's restatement (2026-10-26) has the pool slide up to include the peak itself. Settle which, alongside the floor rising too quickly.
+- **The combo's new basis.** Merges rather than time: for example, merges within the last few launches, or within the current launch.
 
 ## Decision log
 
@@ -125,4 +130,5 @@ None right now.
 | 2026-10-24 | Purge skips blobs that are merging or held for a merge; the merge finishes first. | Removing a blob mid-merge would cancel a merge the player already earned. |
 | 2026-10-24 | Nova seeds around the last blob; a field emptied outright (only possible by purging) reseeds as a new game, without the bonus. | The spec covers one blob remaining, not none. |
 | 2026-10-24 | Ending times each blob separately, by its centre's distance from the field centre; once over, the field keeps moving but the rules and launches stop. | Matches "any blob stays outside the rim for a continuous grace period". |
-| 2026-10-26 | Seed opens with values 2–8, not the spec's 1–8. | Seeded 1s fell below the opening pool and were purged at once; a 1 also stood out too much visually. |
+| 2026-10-26 | Seed opens with values 2–8. | Seeded 1s fell below the opening pool and were purged at once; a 1 also stood out too much visually. |
+| 2026-10-26 | Values start at 2 everywhere: Seed, the pool's floor, and a nova's half value. | Ethan: a 1 stands out too much. The spec now says so. |

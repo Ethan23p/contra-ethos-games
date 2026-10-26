@@ -47,12 +47,12 @@ impl Default for Rules {
 impl Rules {
     /// Pool window: the values the launcher may draw, lowest first. Ceiling =
     /// max(8, peak ÷ 2); 3 + floor((log₂ peak − 3) ÷ 6) consecutive values
-    /// counting down from it, never below 1. Below a peak of 8 the window
+    /// counting down from it, never below 2. Below a peak of 8 the window
     /// stays at 3 rather than narrowing.
     pub fn pool(&self, peak: u32) -> Vec<u32> {
-        let ceiling = self.ceiling.max(1).max(peak / 2).ilog2();
+        let ceiling = self.ceiling.max(2).max(peak / 2).ilog2();
         let past = peak.max(1).ilog2().saturating_sub(self.ceiling.max(1).ilog2());
-        let count = (self.window.max(1) + (past / self.widen_every.max(1)) as usize).min(ceiling as usize + 1);
+        let count = (self.window.max(1) + (past / self.widen_every.max(1)) as usize).min(ceiling as usize);
         (ceiling + 1 - count as u32..=ceiling).map(|k| 1 << k).collect()
     }
 }
@@ -219,7 +219,7 @@ impl Game {
         self.field.centre = b.pos;
         let value = b.value;
         self.field.scatter(p, &mut self.rng, self.rules.nova_blobs, |rng| {
-            if rng.below(2) == 0 { value } else { (value / 2).max(1) }
+            if rng.below(2) == 0 { value } else { (value / 2).max(2) }
         });
         self.outside.clear();
         self.events.push(Event::Nova { value, at: b.pos, bonus: self.rules.nova_bonus });
