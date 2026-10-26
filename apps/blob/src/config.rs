@@ -20,6 +20,7 @@ pub struct Config {
     pub cutoff: f32,
     pub max_force: f32,
     pub damping: f32,
+    pub rest: f32,
     pub well: f32,
     pub well_radius: f32,
     pub centre_follow: f32,
@@ -53,15 +54,18 @@ pub struct Config {
     /// Look: how far apart identical surfaces start to fuse, × radius.
     pub blend: f32,
     pub link_width: f32,
-    pub highlight: f32,
-    pub shading: f32,
+    /// The digits' outline and hard drop shadow: opacity (0 is off), and
+    /// size × the digit height.
+    pub digit_outline: f32,
+    pub digit_outline_width: f32,
+    pub digit_shadow: f32,
+    pub digit_shadow_offset: f32,
     pub glimmer: bool,
     pub glimmer_period: f32,
     pub glimmer_strength: f32,
     pub sparkles: i32,
     pub glint_rate: f32,
     pub wobble: f32,
-    pub droplets: i32,
 }
 
 /// Pairs rest at 2^(1/6) σ.
@@ -70,7 +74,8 @@ const REST: f32 = 1.122_462;
 impl Default for Config {
     /// Ethan's first round on Spec fluid (2026-10-24), with the blobs grown to
     /// the old build's size against the ring: σ, ε and the force cap scaled
-    /// with them so the fluid feels the same.
+    /// with them so the fluid feels the same. Retuned 2026-10-26: a stronger,
+    /// tighter well against settling jitter, and the minimal look.
     fn default() -> Self {
         Self {
             mode: 1,
@@ -78,10 +83,11 @@ impl Default for Config {
             spacing: 0.94,
             epsilon: 295.0,
             cutoff: 2.5,
-            max_force: 23_500.0,
+            max_force: 24_000.0,
             damping: 2.0,
-            well: 1570.0,
-            well_radius: 760.0,
+            rest: 30.0,
+            well: 2420.0,
+            well_radius: 550.0,
             centre_follow: 0.5,
             spring: 9.5,
             bond_rest: 1.05,
@@ -98,6 +104,12 @@ impl Default for Config {
             max_speed: 3000.0,
             substeps: 4,
             show_bonds: true,
+            drawn: 0.83,
+            blend: 1.5,
+            wobble: 0.5,
+            glimmer_period: 4.2,
+            glimmer_strength: 0.8,
+            sparkles: 1,
             ..Self::from_physics(Physics::default())
         }
     }
@@ -115,6 +127,7 @@ impl Config {
             cutoff: p.cutoff,
             max_force: p.max_force,
             damping: p.damping,
+            rest: p.rest,
             well: p.well,
             well_radius: p.well_radius,
             centre_follow: p.centre_follow,
@@ -136,15 +149,16 @@ impl Config {
             drawn: 0.9,
             blend: 0.5,
             link_width: 0.34,
-            highlight: 0.38,
-            shading: 0.3,
+            digit_outline: 0.0,
+            digit_outline_width: 0.06,
+            digit_shadow: 0.0,
+            digit_shadow_offset: 0.07,
             glimmer: true,
             glimmer_period: 3.2,
             glimmer_strength: 0.6,
             sparkles: 3,
             glint_rate: 0.6,
             wobble: 0.22,
-            droplets: 7,
             ceiling: r.ceiling as i32,
             window: r.window as i32,
             widen_every: r.widen_every as i32,
@@ -180,6 +194,7 @@ impl Config {
             cutoff: self.cutoff,
             max_force: self.max_force,
             damping: self.damping,
+            rest: self.rest,
             well: self.well,
             well_radius: self.well_radius,
             centre_follow: self.centre_follow,
@@ -250,6 +265,7 @@ impl Tunable for Config {
             .float("max_force", "Force cap per pair", "u/s²", 1000.0..=2_000_000.0, 1000.0, |c| &mut c.max_force);
         s.group("Motion")
             .float("damping", "Damping", "1/s", 0.0..=60.0, 0.1, |c| &mut c.damping)
+            .float("rest", "Rest friction", "u/s²", 0.0..=2000.0, 1.0, |c| &mut c.rest)
             .float("max_speed", "Speed cap", "u/s", 100.0..=50_000.0, 100.0, |c| &mut c.max_speed)
             .int("substeps", "Substeps per step", "", 1..=16, |c| &mut c.substeps);
         s.group("Well")
@@ -277,10 +293,12 @@ impl Tunable for Config {
             .float("drawn", "Drawn size", "× radius", 0.5..=1.5, 0.01, |c| &mut c.drawn)
             .float("blend", "Goo blend", "× radius", 0.0..=2.0, 0.01, |c| &mut c.blend)
             .float("link_width", "Bond tether width", "× radius", 0.0..=1.0, 0.01, |c| &mut c.link_width)
-            .float("highlight", "Highlight", "", 0.0..=1.0, 0.01, |c| &mut c.highlight)
-            .float("shading", "Edge shading", "", 0.0..=1.5, 0.01, |c| &mut c.shading)
-            .float("wobble", "Merge pop wobble", "× size", 0.0..=1.0, 0.01, |c| &mut c.wobble)
-            .int("droplets", "Merge droplets", "", 0..=40, |c| &mut c.droplets);
+            .float("wobble", "Merge pop wobble", "× size", 0.0..=1.0, 0.01, |c| &mut c.wobble);
+        s.group("Digits")
+            .float("digit_outline", "Outline opacity", "", 0.0..=1.0, 0.01, |c| &mut c.digit_outline)
+            .float("digit_outline_width", "Outline width", "× digit", 0.0..=0.12, 0.005, |c| &mut c.digit_outline_width)
+            .float("digit_shadow", "Shadow opacity", "", 0.0..=1.0, 0.01, |c| &mut c.digit_shadow)
+            .float("digit_shadow_offset", "Shadow drop", "× digit", 0.0..=0.4, 0.005, |c| &mut c.digit_shadow_offset);
         s.group("Glimmer (peak blobs)")
             .toggle("glimmer", "Glimmer", |c| &mut c.glimmer)
             .float("glimmer_period", "Sheen every", "s", 0.3..=20.0, 0.1, |c| &mut c.glimmer_period)

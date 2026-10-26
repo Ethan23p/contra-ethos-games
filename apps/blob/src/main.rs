@@ -197,8 +197,6 @@ impl App for BlobApp {
                     self.born.insert(blob, (Birth::Pop, self.time));
                     let Some(b) = self.game.field.blob(blob) else { continue };
                     let color = look::blob_color(b.group, b.value);
-                    let n = c.droplets.max(0) as usize * count.saturating_sub(1).min(3);
-                    self.drops.burst(&mut self.fx, at, r, n, (110.0, 260.0), (0.14, 0.28), color, self.time, 0.45);
                     Flash::Ring { at, color, size: r * (1.0 + 0.25 * count as f32) }
                 }
                 Event::Scored { points, combo, at, .. } => Flash::Pop { at, points, combo },

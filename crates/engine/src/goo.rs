@@ -14,16 +14,10 @@ use crate::shapes::{Layer, Shapes};
 #[derive(Clone, Copy, Debug)]
 pub struct Goo {
     pub fill: [f32; 4],
-    pub outline: [f32; 4],
-    pub outline_width: f32,
     /// How far apart two surfaces start to fuse.
     pub blend: f32,
     /// Radius of the tether a link draws.
     pub link_radius: f32,
-    /// Strength of the specular spot on each circle, 0–1.
-    pub highlight: f32,
-    /// How strongly the edges shade toward and away from the light.
-    pub shading: f32,
     /// Where the sheen band sits across the group, in radii of its first
     /// circle from that circle's centre, along a diagonal.
     pub sheen_at: f32,
@@ -36,12 +30,8 @@ impl Default for Goo {
     fn default() -> Self {
         Self {
             fill: [1.0; 4],
-            outline: [0.0, 0.0, 0.0, 0.25],
-            outline_width: 0.0,
             blend: 0.0,
             link_radius: 0.0,
-            highlight: 0.0,
-            shading: 0.0,
             sheen_at: 0.0,
             sheen: 0.0,
             sheen_color: [1.0; 4],
@@ -56,8 +46,6 @@ pub(crate) struct GooInstance {
     range: [u32; 4],
     shape: [f32; 4],
     fill: [f32; 4],
-    outline: [f32; 4],
-    light: [f32; 4],
     sheen_color: [f32; 4],
 }
 
@@ -95,10 +83,8 @@ impl Shapes {
             self.goo_instances.push(GooInstance {
                 quad: [c.x, c.y, half + 2.0, i as f32],
                 range: [start, px.len() as u32, links.len() as u32, 0],
-                shape: [blend, style.outline_width * v.scale, link, 0.0],
+                shape: [blend, link, style.sheen_at, style.sheen],
                 fill: style.fill,
-                outline: style.outline,
-                light: [style.highlight, style.shading, style.sheen_at, style.sheen],
                 sheen_color: style.sheen_color,
             });
         }
@@ -156,8 +142,7 @@ impl GooPipeline {
             array_stride: size_of::<GooInstance>() as u64,
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: &wgpu::vertex_attr_array![
-                0 => Float32x4, 1 => Uint32x4, 2 => Float32x4, 3 => Float32x4,
-                4 => Float32x4, 5 => Float32x4, 6 => Float32x4
+                0 => Float32x4, 1 => Uint32x4, 2 => Float32x4, 3 => Float32x4, 4 => Float32x4
             ],
         };
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {

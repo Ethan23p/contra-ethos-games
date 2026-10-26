@@ -292,6 +292,8 @@ impl Field {
         let keep = (-p.damping * h).exp();
         for (b, a) in self.blobs.iter_mut().zip(acc) {
             b.vel = ((b.vel + a.clamp_length_max(max_acc) * h) * keep).clamp_length_max(p.max_speed);
+            let speed = b.vel.length();
+            b.vel *= (1.0 - p.rest * h / speed.max(1e-6)).max(0.0);
             b.pos += b.vel * h;
         }
     }

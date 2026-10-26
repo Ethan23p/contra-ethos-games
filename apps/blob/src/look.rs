@@ -16,6 +16,8 @@ const GOLD: u32 = 0xf5c542;
 const SHINE: u32 = 0xfff6d6;
 /// Digits: a hair off pure white, so they sit on the colour instead of glaring.
 const INK: u32 = 0xfbfaf6;
+/// The digits' outline and shadow, off the peak.
+const EDGE: u32 = 0x0b0d12;
 
 pub fn blob_color(group: u8, value: u32) -> [f32; 4] {
     // Higher values lighten toward white, a step per doubling.
@@ -45,14 +47,11 @@ pub fn style(c: &Config, group: u8, value: u32, gold: bool, r: f32) -> Goo {
         fill: blob_color(group, value),
         blend: r * c.blend,
         link_radius: r * c.link_width,
-        highlight: c.highlight,
-        shading: c.shading,
         ..Goo::default()
     };
     if gold && c.glimmer {
         g.sheen = c.glimmer_strength;
         g.sheen_color = rgb(SHINE);
-        g.highlight = (c.highlight * 1.4).min(1.0);
     }
     g
 }
@@ -143,8 +142,8 @@ pub fn draw_field(s: &mut Shapes, c: &Config, blobs: &[Drawn], bonds: &[(u32, u3
     }
     for b in blobs {
         // Merging blobs fade their numbers as they flow together.
-        let alpha = if b.merging.is_some() { 0.3 } else { 0.95 };
-        number(s, b.pos, b.r, b.value, rgba(INK, alpha));
+        let fade = if b.merging.is_some() { 0.3 } else { 1.0 };
+        number(s, c, b.pos, b.r, b.value, b.value == peak && c.glimmer, fade);
     }
     if c.glimmer {
         for b in blobs.iter().filter(|b| b.value == peak) {
@@ -161,13 +160,26 @@ pub fn draw_one(s: &mut Shapes, c: &Config, pos: Vec2, r: f32, group: u8, value:
         st.sheen_at = sweep(time, c.glimmer_period, 1.0);
     }
     s.goo(&[(pos, r)], &[], &st);
-    number(s, pos, r, value, rgba(INK, 0.95));
+    number(s, c, pos, r, value, gold && c.glimmer, 1.0);
 }
 
-fn number(s: &mut Shapes, pos: Vec2, r: f32, value: u32, color: [f32; 4]) {
+/// A blob's value, with the configured shadow and outline: dark, or gold on
+/// the peak. Glyph outlines sit outside the stroke.
+fn number(s: &mut Shapes, c: &Config, pos: Vec2, r: f32, value: u32, gold: bool, fade: f32) {
     let text = value.to_string();
     let size = r * if text.len() >= 3 { 0.68 } else { 0.94 };
-    s.text(pos, size, &text, color);
+    let edge = if gold { GOLD } else { EDGE };
+    if c.digit_shadow > 0.0 {
+        let at = pos + Vec2::new(0.0, size * c.digit_shadow_offset);
+        let width = if c.digit_outline > 0.0 { size * c.digit_outline_width } else { 0.0 };
+        let color = rgba(edge, c.digit_shadow * fade);
+        // The shadow takes the outline's footprint too, so it reads as one piece.
+        s.text(at, size, &text, color).outline(width, color);
+    }
+    let digits = s.text(pos, size, &text, rgba(INK, 0.95 * fade));
+    if c.digit_outline > 0.0 {
+        digits.outline(size * c.digit_outline_width, rgba(edge, c.digit_outline * fade));
+    }
 }
 
 fn hash(a: u32, b: u32, c: u32) -> f32 {
@@ -298,7 +310,7 @@ impl Drops {
             let k = ((now - d.born) / d.life).clamp(0.0, 1.0);
             let mut color = d.color;
             color[3] *= (1.0 - k).min(0.3) / 0.3;
-            let goo = Goo { fill: color, highlight: 0.3, shading: 0.2, outline: rgba(0, 0.0), ..Goo::default() };
+            let goo = Goo { fill: color, ..Goo::default() };
             s.goo(&[(d.pos, d.r * (1.0 - k).powf(0.6))], &[], &goo);
         }
     }

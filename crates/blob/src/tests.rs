@@ -70,6 +70,25 @@ fn motion_the_well_pulls_a_lone_blob_toward_the_centre() {
 }
 
 #[test]
+fn motion_rest_friction_brings_a_drifting_blob_fully_to_rest() {
+    let p = Physics { rest: 30.0, ..calm() };
+    let mut f = Field::new();
+    let id = f.add(0, 2, Vec2::ZERO);
+    f.blobs[0].vel = Vec2::new(4.0, 0.0);
+    run(&mut f, &p, 0.5);
+    assert_eq!(f.blob(id).unwrap().vel, Vec2::ZERO);
+}
+
+#[test]
+fn motion_without_rest_friction_damping_never_quite_stops_a_blob() {
+    let mut f = Field::new();
+    let id = f.add(0, 2, Vec2::ZERO);
+    f.blobs[0].vel = Vec2::new(4.0, 0.0);
+    run(&mut f, &calm(), 0.5);
+    assert!(f.blob(id).unwrap().vel.x > 0.0);
+}
+
+#[test]
 fn motion_the_centre_tracks_the_centre_of_mass() {
     let p = calm();
     let mut f = Field::new();

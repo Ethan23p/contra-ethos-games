@@ -44,6 +44,10 @@ pub struct Physics {
 
     /// Viscous damping rate (1/s): speed falls by e every 1/damping seconds.
     pub damping: f32,
+    /// A constant drag (units/s²) on top of the damping, which alone only
+    /// ever shrinks speed: this brings a settling blob fully to rest, and
+    /// holds it there against any net force weaker than itself.
+    pub rest: f32,
     /// The well's pull at full strength (units/s²).
     pub well: f32,
     /// Distance from the centre where the well's pull saturates.
@@ -101,6 +105,7 @@ impl Default for Physics {
             cutoff: 2.5,
             max_force: 125_000.0,
             damping: 12.8,
+            rest: 0.0,
             well: 600.0,
             well_radius: 450.0,
             centre_follow: 5.0,
