@@ -14,8 +14,8 @@ use crate::config::Config;
 pub const GROUP: [u32; 3] = [0x38bdf8, 0x34d399, 0xfb7185];
 const GOLD: u32 = 0xf5c542;
 const SHINE: u32 = 0xfff6d6;
-const INK: u32 = 0x101218;
-const GOLD_INK: u32 = 0x3a2606;
+/// Digits: a hair off pure white, so they sit on the colour instead of glaring.
+const INK: u32 = 0xfbfaf6;
 
 pub fn blob_color(group: u8, value: u32) -> [f32; 4] {
     // Higher values lighten toward white, a step per doubling.
@@ -43,8 +43,6 @@ pub struct Drawn {
 pub fn style(c: &Config, group: u8, value: u32, gold: bool, r: f32) -> Goo {
     let mut g = Goo {
         fill: blob_color(group, value),
-        outline: rgba(0, 0.22),
-        outline_width: r * c.outline,
         blend: r * c.blend,
         link_radius: r * c.link_width,
         highlight: c.highlight,
@@ -52,11 +50,6 @@ pub fn style(c: &Config, group: u8, value: u32, gold: bool, r: f32) -> Goo {
         ..Goo::default()
     };
     if gold && c.glimmer {
-        // The group's colour stays, so identity reads at a glance; warmed,
-        // with a gold rim and a sheen.
-        g.fill = mix(g.fill, rgb(GOLD), 0.18);
-        g.outline = rgb(GOLD);
-        g.outline_width = r * c.outline.max(0.02) * 2.0;
         g.sheen = c.glimmer_strength;
         g.sheen_color = rgb(SHINE);
         g.highlight = (c.highlight * 1.4).min(1.0);
@@ -149,14 +142,13 @@ pub fn draw_field(s: &mut Shapes, c: &Config, blobs: &[Drawn], bonds: &[(u32, u3
         s.goo(&circles, &links, &st);
     }
     for b in blobs {
-        let ink = if b.value == peak && c.glimmer { GOLD_INK } else { INK };
         // Merging blobs fade their numbers as they flow together.
-        let alpha = if b.merging.is_some() { 0.3 } else { 0.85 };
-        number(s, b.pos, b.r, b.value, rgba(ink, alpha));
+        let alpha = if b.merging.is_some() { 0.3 } else { 0.95 };
+        number(s, b.pos, b.r, b.value, rgba(INK, alpha));
     }
     if c.glimmer {
         for b in blobs.iter().filter(|b| b.value == peak) {
-            sparkles(s, b.id, b.pos, b.r, time, c.sparkles.max(0) as u32, c.glimmer_strength);
+            sparkles(s, b.id, b.pos, b.r, time, c.sparkles.max(0) as u32, c.glint_rate, c.glimmer_strength);
         }
     }
 }
@@ -169,8 +161,7 @@ pub fn draw_one(s: &mut Shapes, c: &Config, pos: Vec2, r: f32, group: u8, value:
         st.sheen_at = sweep(time, c.glimmer_period, 1.0);
     }
     s.goo(&[(pos, r)], &[], &st);
-    let ink = if gold && c.glimmer { GOLD_INK } else { INK };
-    number(s, pos, r, value, rgba(ink, 0.85));
+    number(s, pos, r, value, rgba(INK, 0.95));
 }
 
 fn number(s: &mut Shapes, pos: Vec2, r: f32, value: u32, color: [f32; 4]) {
@@ -188,10 +179,13 @@ fn hash(a: u32, b: u32, c: u32) -> f32 {
 }
 
 /// Glints that twinkle on a blob. Each slot lives a cycle at a time and moves
-/// only between cycles, while it's dark, so nothing ever pops.
-fn sparkles(s: &mut Shapes, id: u32, pos: Vec2, r: f32, time: f32, count: u32, strength: f32) {
+/// only between cycles, while it's dark, so nothing ever pops. `rate` is
+/// glints per second for one slot; the others run a little slower, so they
+/// never fall into step.
+#[allow(clippy::too_many_arguments)]
+fn sparkles(s: &mut Shapes, id: u32, pos: Vec2, r: f32, time: f32, count: u32, rate: f32, strength: f32) {
     for slot in 0..count {
-        let period = 1.7 + 0.43 * slot as f32;
+        let period = (1.0 + 0.25 * slot as f32) / rate.max(0.01);
         let t = time / period + hash(id, slot, 0);
         let (n, u) = (t.floor(), t.fract());
         const LIT: f32 = 0.45;

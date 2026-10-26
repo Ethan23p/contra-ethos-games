@@ -122,7 +122,7 @@ fn fs(v: VOut) -> @location(0) vec4<f32> {
     let n = f.yz / max(length(f.yz), 1e-4);
     let facing = dot(n, normalize(vec2(-0.6, -0.8)));
     let edge = (1.0 - depth) * (1.0 - depth);
-    var rgb = v.fill.rgb * (1.0 + v.light.y * facing * edge) * (0.92 + 0.08 * depth);
+    var rgb = v.fill.rgb * (1.0 + v.light.y * facing * edge);
 
     // Sheen: a band sweeping across the group, measured from its first circle.
     let first = members[start];

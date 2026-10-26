@@ -305,7 +305,6 @@ impl App for BlobApp {
                     let size = drawn * (1.0 - k * k).max(0.0);
                     let mut st = look::style(&c, group, value, false, drawn);
                     st.fill = [color[0], color[1], color[2], 1.0 - k * k];
-                    st.outline[3] *= 1.0 - k;
                     s.goo(&[(at, size)], &[], &st);
                 }
                 Flash::Pop { .. } => {}

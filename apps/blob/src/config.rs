@@ -53,13 +53,13 @@ pub struct Config {
     /// Look: how far apart identical surfaces start to fuse, × radius.
     pub blend: f32,
     pub link_width: f32,
-    pub outline: f32,
     pub highlight: f32,
     pub shading: f32,
     pub glimmer: bool,
     pub glimmer_period: f32,
     pub glimmer_strength: f32,
     pub sparkles: i32,
+    pub glint_rate: f32,
     pub wobble: f32,
     pub droplets: i32,
 }
@@ -136,13 +136,13 @@ impl Config {
             drawn: 0.9,
             blend: 0.5,
             link_width: 0.34,
-            outline: 0.06,
             highlight: 0.38,
             shading: 0.3,
             glimmer: true,
             glimmer_period: 3.2,
             glimmer_strength: 0.6,
             sparkles: 3,
+            glint_rate: 0.6,
             wobble: 0.22,
             droplets: 7,
             ceiling: r.ceiling as i32,
@@ -277,7 +277,6 @@ impl Tunable for Config {
             .float("drawn", "Drawn size", "× radius", 0.5..=1.5, 0.01, |c| &mut c.drawn)
             .float("blend", "Goo blend", "× radius", 0.0..=2.0, 0.01, |c| &mut c.blend)
             .float("link_width", "Bond tether width", "× radius", 0.0..=1.0, 0.01, |c| &mut c.link_width)
-            .float("outline", "Outline", "× radius", 0.0..=0.5, 0.005, |c| &mut c.outline)
             .float("highlight", "Highlight", "", 0.0..=1.0, 0.01, |c| &mut c.highlight)
             .float("shading", "Edge shading", "", 0.0..=1.5, 0.01, |c| &mut c.shading)
             .float("wobble", "Merge pop wobble", "× size", 0.0..=1.0, 0.01, |c| &mut c.wobble)
@@ -286,7 +285,8 @@ impl Tunable for Config {
             .toggle("glimmer", "Glimmer", |c| &mut c.glimmer)
             .float("glimmer_period", "Sheen every", "s", 0.3..=20.0, 0.1, |c| &mut c.glimmer_period)
             .float("glimmer_strength", "Sheen and glint strength", "", 0.0..=1.0, 0.01, |c| &mut c.glimmer_strength)
-            .int("sparkles", "Glints per blob", "", 0..=12, |c| &mut c.sparkles);
+            .int("sparkles", "Glints per blob", "", 0..=12, |c| &mut c.sparkles)
+            .float("glint_rate", "Glint frequency", "per s", 0.05..=8.0, 0.05, |c| &mut c.glint_rate);
     }
 
     fn presets() -> Vec<(&'static str, Self)> {
