@@ -69,7 +69,7 @@ impl Default for Rules {
             max_value: 8,
             no_repeat: true,
             one_pair: true,
-            slots: 3,
+            slots: 2,
             survivor: Survivor::Youngest,
         }
     }
