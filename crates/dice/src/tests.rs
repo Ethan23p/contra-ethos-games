@@ -457,7 +457,8 @@ fn no_dead_clusters_after_a_turn() {
     let mut g = Game::with_board(rules, 11, Board::parse(&HOLES));
     g.set_slots(vec![single(6), cluster(&[(0, 0, 1), (1, 0, 2)])]);
     let turn = g.place(0, 0, Pos::new(1, 1)).unwrap();
-    assert!(turn.steps.iter().any(|s| matches!(s, Step::Replace { index: 0, .. })), "{:?}", turn.steps);
+    // The domino stays in slot 1 and fits nowhere on this board.
+    assert!(turn.steps.iter().any(|s| matches!(s, Step::Replace { index: 1, .. })), "{:?}", turn.steps);
     assert!(g.slots().iter().all(|c| fits_anywhere(g.board(), c)));
 }
 
