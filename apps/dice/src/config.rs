@@ -20,7 +20,7 @@ pub struct Config {
     pub max_value: i32,
     pub no_repeat: bool,
     pub one_pair: bool,
-    pub queue_len: i32,
+    pub slots: i32,
     pub oldest: bool,
 
     // Weight: durations and intensities scale with mass^this.
@@ -62,6 +62,10 @@ pub struct Config {
     pub die_size: f32,
     pub die_corner: f32,
     pub pip_size: f32,
+    // Layout, in ems.
+    pub board_pad: f32,
+    pub staging_min: f32,
+    pub slot_pad: f32,
 }
 
 impl Default for Config {
@@ -81,7 +85,7 @@ impl Default for Config {
             max_value: rules.max_value as i32,
             no_repeat: rules.no_repeat,
             one_pair: rules.one_pair,
-            queue_len: rules.queue_len as i32,
+            slots: rules.slots as i32,
             oldest: false,
 
             mass_exponent: 0.5,
@@ -115,6 +119,9 @@ impl Default for Config {
             die_size: 0.92,
             die_corner: 0.16,
             pip_size: 0.125,
+            board_pad: 1.0,
+            staging_min: 10.0,
+            slot_pad: 1.0,
         }
     }
 }
@@ -129,7 +136,7 @@ impl Tunable for Config {
             .int("threshold", "Merge threshold m", "dice", 2..=8, |c| &mut c.threshold)
             .float("score_per_mass", "Score per mass", "", 0.0..=100.0, 1.0, |c| &mut c.score_per_mass)
             .toggle("oldest", "Merge into the oldest die (experiment)", |c| &mut c.oldest)
-            .int("queue_len", "Queue length (restarts)", "", 1..=4, |c| &mut c.queue_len);
+            .int("slots", "Slots on offer (restarts)", "", 1..=5, |c| &mut c.slots);
         s.group("Gravity").toggle("gravity", "Gravity", |c| &mut c.gravity).choice(
             "gravity_dir",
             "Direction",
@@ -187,6 +194,10 @@ impl Tunable for Config {
             .float("die_size", "Die size", "× cell", 0.5..=1.0, 0.01, |c| &mut c.die_size)
             .float("die_corner", "Die corner", "× die", 0.0..=0.5, 0.01, |c| &mut c.die_corner)
             .float("pip_size", "Pip size", "× die", 0.05..=0.3, 0.005, |c| &mut c.pip_size);
+        s.group("Layout")
+            .float("board_pad", "Board side padding", "em", 0.0..=6.0, 0.25, |c| &mut c.board_pad)
+            .float("staging_min", "Staging height, at least", "em", 0.0..=30.0, 0.5, |c| &mut c.staging_min)
+            .float("slot_pad", "Padding around a staged cluster", "em", 0.0..=6.0, 0.25, |c| &mut c.slot_pad);
     }
 }
 
@@ -203,7 +214,7 @@ impl Config {
             max_value: self.max_value as u32,
             no_repeat: self.no_repeat,
             one_pair: self.one_pair,
-            queue_len: self.queue_len as usize,
+            slots: self.slots as usize,
             survivor: if self.oldest { Survivor::Oldest } else { Survivor::Youngest },
         }
     }

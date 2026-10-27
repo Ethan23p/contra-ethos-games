@@ -1,7 +1,7 @@
 //! Dice Merge rules, as defined by the Dice Merge abstract specification.
 //! Pure Rust: no rendering or platform dependencies (see CLAUDE.md).
 //!
-//! The entities are [`Die`], [`Board`], [`Cluster`], the queue and the score,
+//! The entities are [`Die`], [`Board`], [`Cluster`], the slots and the score,
 //! all held by [`Game`]. The player's capabilities are [`Game::rotate`] and
 //! [`Game::place`]; the system's, Merge and Spawn, run inside `place`, which
 //! returns the turn as a timeline of [`Step`]s for presentation to animate.
@@ -49,8 +49,9 @@ pub struct Rules {
     /// Spawn distribution, variety: a 3-cell cluster holds exactly one pair.
     /// Overrides `no_repeat`.
     pub one_pair: bool,
-    /// Supply: the queue's fixed length.
-    pub queue_len: usize,
+    /// Supply: how many clusters are on offer at once. Any may be placed, and
+    /// a placed one's slot is restocked with a fresh spawn.
+    pub slots: usize,
     /// Survivor: youngest (the rule) or oldest (the open experiment).
     pub survivor: Survivor,
 }
@@ -68,7 +69,7 @@ impl Default for Rules {
             max_value: 8,
             no_repeat: true,
             one_pair: true,
-            queue_len: 2,
+            slots: 3,
             survivor: Survivor::Youngest,
         }
     }

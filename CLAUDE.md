@@ -32,7 +32,7 @@ Code names follow the specs exactly, so a reader can go from a spec row straight
 | **value** | The one word for a piece's tier or worth. Dice: 1, 2, 3, … Blobs: 1, 2, 4, 8, … Never "power", "rank" or "level". |
 | **mass** | Value as the physics sees it. Dice: `mass(v) = b^(v−1)`; scoring, spawn rarity and animation weight all read it. Blobs: currently uniform, so a high value never gets sluggish. |
 | **neighborhood** | A maximal connected set of identical pieces: orthogonal on the dice board; touch or bond on the blob field. |
-| **cluster** | Dice only: the 1–3-die polyomino in the queue. Once placed it's just dice. |
+| **cluster** | Dice only: the 1–3-die polyomino on offer in a staging slot. Once placed it's just dice. |
 | **m** | Merge size, in both games. |
 | **survivor** | Dice only: the youngest die in a neighborhood. Blob merges converge on the neighborhood's shared centre instead. |
 

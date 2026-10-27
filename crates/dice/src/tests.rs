@@ -13,12 +13,12 @@ fn single(v: u32) -> Cluster {
     cluster(&[(0, 0, v)])
 }
 
-/// A game on `rows` whose queue starts with `head`.
+/// A game on `rows` whose first slot holds `head`.
 fn game(rules: Rules, rows: &[&str], head: Cluster) -> Game {
     let mut g = Game::with_board(rules, 7, Board::parse(rows));
-    let mut queue = g.queue().to_vec();
-    queue[0] = head;
-    g.set_queue(queue);
+    let mut slots = g.slots().to_vec();
+    slots[0] = head;
+    g.set_slots(slots);
     g
 }
 
@@ -51,20 +51,20 @@ fn legality_needs_every_cell_in_bounds_and_empty() {
         &[". . . . .", ". 1 . . .", ". . . . .", ". . . . .", ". . . . ."],
         cluster(&[(0, 0, 1), (1, 0, 2)]),
     );
-    assert!(g.can_place(0, Pos::new(2, 1)));
-    assert!(!g.can_place(0, Pos::new(0, 1)), "second cell is occupied");
-    assert!(!g.can_place(0, Pos::new(4, 0)), "second cell is off the board");
-    assert!(g.can_place(1, Pos::new(4, 0)), "anchored on the other cell it fits");
-    assert!(!g.can_place(0, Pos::new(-1, 0)));
-    assert!(!g.can_place(2, Pos::new(2, 2)), "no such cell");
+    assert!(g.can_place(0, 0, Pos::new(2, 1)));
+    assert!(!g.can_place(0, 0, Pos::new(0, 1)), "second cell is occupied");
+    assert!(!g.can_place(0, 0, Pos::new(4, 0)), "second cell is off the board");
+    assert!(g.can_place(0, 1, Pos::new(4, 0)), "anchored on the other cell it fits");
+    assert!(!g.can_place(0, 0, Pos::new(-1, 0)));
+    assert!(!g.can_place(0, 2, Pos::new(2, 2)), "no such cell");
 }
 
 #[test]
 fn legality_rejects_an_illegal_place_without_changing_anything() {
     let mut g = game(Rules::default(), &EMPTY5, cluster(&[(0, 0, 1), (1, 0, 2)]));
-    let before = (g.board().clone(), g.queue().to_vec());
-    assert_eq!(g.place(0, Pos::new(4, 4)), Err(PlaceError::Illegal));
-    assert_eq!((g.board().clone(), g.queue().to_vec()), before);
+    let before = (g.board().clone(), g.slots().to_vec());
+    assert_eq!(g.place(0, 0, Pos::new(4, 4)), Err(PlaceError::Illegal));
+    assert_eq!((g.board().clone(), g.slots().to_vec()), before);
 }
 
 #[test]
@@ -72,12 +72,12 @@ fn legality_rotation_is_free_and_clockwise() {
     let l = cluster(&[(0, 0, 1), (0, 1, 2), (1, 1, 3)]);
     let mut g = game(Rules::default(), &EMPTY5, l.clone());
     let before = g.board().clone();
-    g.rotate();
-    assert_eq!(g.head(), &cluster(&[(1, 0, 1), (0, 0, 2), (0, 1, 3)]));
+    g.rotate(0);
+    assert_eq!(g.slot(0), &cluster(&[(1, 0, 1), (0, 0, 2), (0, 1, 3)]));
     for _ in 0..3 {
-        g.rotate();
+        g.rotate(0);
     }
-    assert_eq!(g.head(), &l, "four quarter-turns are the identity");
+    assert_eq!(g.slot(0), &l, "four quarter-turns are the identity");
     assert_eq!(g.board(), &before);
 
     let domino = cluster(&[(0, 0, 1), (1, 0, 2)]);
@@ -89,12 +89,12 @@ fn legality_rotation_is_free_and_clockwise() {
 #[test]
 fn threshold_merges_at_m_and_not_below() {
     let mut g = game(Rules::default(), &[". . . . .", "1 . . . .", ". . . . .", ". . . . .", ". . . . ."], single(1));
-    let turn = g.place(0, Pos::new(1, 1)).unwrap();
+    let turn = g.place(0, 0, Pos::new(1, 1)).unwrap();
     assert!(merges(&turn).is_empty(), "a pair stays");
-    let mut queue = g.queue().to_vec();
-    queue[0] = single(1);
-    g.set_queue(queue);
-    let turn = g.place(0, Pos::new(2, 1)).unwrap();
+    let mut slots = g.slots().to_vec();
+    slots[0] = single(1);
+    g.set_slots(slots);
+    let turn = g.place(0, 0, Pos::new(2, 1)).unwrap();
     assert_eq!(merges(&turn).len(), 1, "three merge");
     assert_eq!(g.board().dice().count(), 1);
 }
@@ -103,7 +103,7 @@ fn threshold_merges_at_m_and_not_below() {
 fn threshold_consumes_the_whole_neighborhood() {
     let rows = [". . . . .", "2 2 . . .", "2 . . . .", "2 . . . .", ". . . . ."];
     let mut g = game(Rules::default(), &rows, single(2));
-    let turn = g.place(0, Pos::new(1, 2)).unwrap();
+    let turn = g.place(0, 0, Pos::new(1, 2)).unwrap();
     let merge = &merges(&turn)[0][0];
     assert_eq!(merge.cells.len(), 5);
     assert_eq!(g.board().dice().count(), 1, "five dice became one");
@@ -114,7 +114,7 @@ fn threshold_consumes_the_whole_neighborhood() {
 fn threshold_m_is_tunable() {
     let rules = Rules { threshold: 4, ..Rules::default() };
     let mut g = game(rules, &[". . . . .", "1 1 . . .", ". . . . .", ". . . . .", ". . . . ."], single(1));
-    let turn = g.place(0, Pos::new(2, 1)).unwrap();
+    let turn = g.place(0, 0, Pos::new(2, 1)).unwrap();
     assert!(merges(&turn).is_empty());
 }
 
@@ -129,7 +129,7 @@ fn yield_releases_n_mass_minus_the_merged_mass() {
 
     let rows = [". . . . .", "2 2 . . .", "2 . . . .", "2 . . . .", ". . . . ."];
     let mut g = game(Rules::default(), &rows, single(2));
-    let turn = g.place(0, Pos::new(1, 2)).unwrap();
+    let turn = g.place(0, 0, Pos::new(1, 2)).unwrap();
     assert_eq!(turn.score, 60.0, "released mass × 10");
     assert_eq!(g.score(), 60.0);
 }
@@ -141,7 +141,7 @@ fn yield_never_costs_score() {
     let rules = Rules { threshold: 2, base: 3.0, ..Rules::default() };
     assert_eq!(rules.released(2, 1), 0.0, "2 · 1 − 3 clamps to 0");
     let mut g = game(rules, &[". . . . .", "1 . . . .", ". . . . .", ". . . . .", ". . . . ."], single(1));
-    let turn = g.place(0, Pos::new(1, 1)).unwrap();
+    let turn = g.place(0, 0, Pos::new(1, 1)).unwrap();
     assert_eq!(merges(&turn).len(), 1);
     assert_eq!(g.score(), 0.0);
 }
@@ -153,14 +153,14 @@ fn survivor_place_ages_dice_furthest_first_and_anchor_last() {
     // An I-tromino anchored in the middle: the two ends are equally far, so
     // they share an age, and the anchor is younger than both.
     let mut g = game(Rules::default(), &EMPTY5, cluster(&[(0, 0, 5), (1, 0, 6), (2, 0, 7)]));
-    g.place(1, Pos::new(2, 2)).unwrap();
+    g.place(0, 1, Pos::new(2, 2)).unwrap();
     let born = |x| g.board().get(Pos::new(x, 2)).unwrap().born;
     assert_eq!(born(1), born(3));
     assert!(born(2) > born(1));
 
     // An L anchored at one end: the far end, then the corner, then the anchor.
     let mut g = game(Rules::default(), &EMPTY5, cluster(&[(0, 0, 5), (0, 1, 6), (1, 1, 7)]));
-    g.place(0, Pos::new(1, 1)).unwrap();
+    g.place(0, 0, Pos::new(1, 1)).unwrap();
     let born = |x, y| g.board().get(Pos::new(x, y)).unwrap().born;
     assert!(born(2, 2) < born(1, 2) && born(1, 2) < born(1, 1));
 }
@@ -173,7 +173,7 @@ fn survivor_is_the_youngest_die_and_keeps_its_age() {
         &[". . . . .", "1 . . . .", ". . . . .", ". . . . .", ". . . . ."],
         cluster(&[(0, 0, 1), (1, 0, 1)]),
     );
-    let turn = g.place(1, Pos::new(2, 1)).unwrap();
+    let turn = g.place(0, 1, Pos::new(2, 1)).unwrap();
     let m = &merges(&turn)[0][0];
     assert_eq!(m.survivor, Pos::new(2, 1), "the anchor is the youngest");
     let placed_anchor = match &turn.steps[0] {
@@ -191,10 +191,10 @@ fn survivor_equal_ages_are_a_coin_flip() {
     let mut landed = [0; 3];
     for seed in 0..300 {
         let mut g = Game::with_board(Rules::default(), seed, Board::parse(&rows));
-        let mut queue = g.queue().to_vec();
-        queue[0] = single(5);
-        g.set_queue(queue);
-        let turn = g.place(0, Pos::new(4, 4)).unwrap();
+        let mut slots = g.slots().to_vec();
+        slots[0] = single(5);
+        g.set_slots(slots);
+        let turn = g.place(0, 0, Pos::new(4, 4)).unwrap();
         landed[merges(&turn)[0][0].survivor.x as usize] += 1;
     }
     for (x, &n) in landed.iter().enumerate() {
@@ -210,7 +210,7 @@ fn survivor_oldest_experiment() {
         &[". . . . .", "1 . . . .", ". . . . .", ". . . . .", ". . . . ."],
         cluster(&[(0, 0, 1), (1, 0, 1)]),
     );
-    let turn = g.place(1, Pos::new(2, 1)).unwrap();
+    let turn = g.place(0, 1, Pos::new(2, 1)).unwrap();
     assert_eq!(merges(&turn)[0][0].survivor, Pos::new(0, 1));
 }
 
@@ -221,7 +221,7 @@ fn settling_chains_to_a_fixed_point() {
     // The new 1 completes three 1s; their survivor, now a 2, completes three 2s.
     let rows = ["2 2 . . .", ". 1 1 . .", ". . . . .", ". . . . .", ". . . . ."];
     let mut g = game(Rules::default(), &rows, single(1));
-    let turn = g.place(0, Pos::new(2, 0)).unwrap();
+    let turn = g.place(0, 0, Pos::new(2, 0)).unwrap();
     let gens = merges(&turn);
     assert_eq!(gens.len(), 2);
     assert_eq!(gens[0][0].die.value, 2);
@@ -235,7 +235,7 @@ fn settling_chains_to_a_fixed_point() {
 fn settling_merges_every_qualifying_neighborhood_at_once() {
     let rows = ["1 1 . . .", ". . . . .", "3 3 . . .", ". . . . .", ". . . . ."];
     let mut g = game(Rules::default(), &rows, cluster(&[(0, 0, 1), (0, 1, 5), (0, 2, 3)]));
-    let turn = g.place(1, Pos::new(2, 1)).unwrap();
+    let turn = g.place(0, 1, Pos::new(2, 1)).unwrap();
     let gens = merges(&turn);
     assert_eq!(gens.len(), 1, "one generation");
     assert_eq!(gens[0].len(), 2, "both neighborhoods in it");
@@ -248,7 +248,7 @@ fn settling_reads_a_frozen_board() {
     // so it doesn't join it.
     let rows = ["1 1 . . .", ". . . 2 2", ". . . . .", ". . . . .", ". . . . ."];
     let mut g = game(Rules::default(), &rows, cluster(&[(0, 0, 1), (0, 1, 2)]));
-    let turn = g.place(1, Pos::new(2, 1)).unwrap();
+    let turn = g.place(0, 1, Pos::new(2, 1)).unwrap();
     let gens = merges(&turn);
     assert_eq!(gens.len(), 1);
     assert!(gens[0].iter().all(|m| m.cells.len() == 3));
@@ -260,7 +260,7 @@ fn settling_reads_a_frozen_board() {
 #[test]
 fn gravity_is_off_by_default() {
     let mut g = game(Rules::default(), &EMPTY5, single(4));
-    g.place(0, Pos::new(2, 0)).unwrap();
+    g.place(0, 0, Pos::new(2, 0)).unwrap();
     assert_eq!(value_at(&g, 2, 0), Some(4));
 }
 
@@ -269,7 +269,7 @@ fn gravity_settles_after_place_and_after_merge() {
     for dir in Dir::ALL {
         let rules = Rules { gravity: Some(dir), ..Rules::default() };
         let mut g = game(rules, &EMPTY5, cluster(&[(0, 0, 1), (1, 0, 2)]));
-        let turn = g.place(0, Pos::new(2, 2)).unwrap();
+        let turn = g.place(0, 0, Pos::new(2, 2)).unwrap();
         assert!(turn.steps.iter().any(|s| matches!(s, Step::Fall(_))), "{dir:?}");
         assert!(g.board().is_settled(dir), "{dir:?}: {:?}", g.board());
     }
@@ -282,7 +282,7 @@ fn gravity_falls_then_merges_then_falls_again() {
     // bottom 1, the three 1s merge into a 2, and the 3 falls onto it.
     let rows = [". . . . .", ". . . . .", "3 . . . .", "1 . . . .", "1 . . . ."];
     let mut g = game(rules, &rows, single(1));
-    let turn = g.place(0, Pos::new(1, 0)).unwrap();
+    let turn = g.place(0, 0, Pos::new(1, 0)).unwrap();
     let kinds: Vec<&str> = turn
         .steps
         .iter()
@@ -290,7 +290,7 @@ fn gravity_falls_then_merges_then_falls_again() {
             Step::Place(_) => "place",
             Step::Fall(_) => "fall",
             Step::Merge(_) => "merge",
-            Step::Spawn(_) => "spawn",
+            Step::Spawn { .. } => "spawn",
             Step::Replace { .. } => "replace",
             Step::End => "end",
         })
@@ -392,42 +392,49 @@ fn spawn_distribution_one_pair_overrides_no_repeat() {
 // Supply
 
 #[test]
-fn supply_keeps_the_queue_length_fixed() {
-    for len in [1, 2, 4] {
-        let rules = Rules { queue_len: len, ..Rules::default() };
+fn supply_restocks_the_placed_slot_and_keeps_the_others() {
+    for len in [1, 3, 5] {
+        let rules = Rules { slots: len, ..Rules::default() };
         let mut g = Game::new(rules, 3);
-        assert_eq!(g.queue().len(), len);
-        let second = g.queue().get(1).cloned();
-        let turn = {
-            let p = first_fit(&mut g);
-            g.place(0, p)
-        }
-        .unwrap();
-        assert_eq!(g.queue().len(), len);
-        assert!(turn.steps.iter().any(|s| matches!(s, Step::Spawn(_))));
-        if let Some(second) = second {
-            assert_eq!(g.head(), &second, "the head was removed and the rest moved up");
-        }
+        assert_eq!(g.slots().len(), len);
+        let slot = len / 2;
+        let mut rotated = 0;
+        let p = loop {
+            if let Some(p) = g.board().positions().find(|&p| g.can_place(slot, 0, p)) {
+                break p;
+            }
+            g.rotate(slot);
+            rotated += 1;
+            assert!(rotated < 4);
+        };
+        let mut others = g.slots().to_vec();
+        let turn = g.place(slot, 0, p).unwrap();
+        assert_eq!(g.slots().len(), len);
+        assert!(turn.steps.iter().any(|s| matches!(s, Step::Spawn { index, .. } if *index == slot)));
+        others.remove(slot);
+        let mut kept = g.slots().to_vec();
+        kept.remove(slot);
+        assert_eq!(kept, others, "the other slots are untouched");
     }
 }
 
-/// Every legal (anchor, cell) for the head as it's turned now.
+/// Every legal (anchor, cell) for the first slot as it's turned now.
 fn legal(g: &Game) -> Vec<(usize, Pos)> {
-    (0..g.head().len())
+    (0..g.slot(0).len())
         .flat_map(|a| g.board().positions().map(move |p| (a, p)))
-        .filter(|&(a, p)| g.can_place(a, p))
+        .filter(|&(a, p)| g.can_place(0, a, p))
         .collect()
 }
 
-/// Turns the head until it has a legal placement, and returns the first one.
+/// Turns the first slot until it has a legal placement, and returns the first one.
 fn first_fit(g: &mut Game) -> Pos {
     for _ in 0..4 {
-        if let Some(p) = g.board().positions().find(|&p| g.can_place(0, p)) {
+        if let Some(p) = g.board().positions().find(|&p| g.can_place(0, 0, p)) {
             return p;
         }
-        g.rotate();
+        g.rotate(0);
     }
-    panic!("no legal placement in any rotation: {:?} {:?}", g.board(), g.head());
+    panic!("no legal placement in any rotation: {:?} {:?}", g.board(), g.slot(0));
 }
 
 // No dead clusters
@@ -436,9 +443,9 @@ const HOLES: [&str; 4] = ["1 2 3 4", "5 . 7 .", "2 3 4 5", ". 7 . 1"];
 
 #[test]
 fn no_dead_clusters_in_a_new_game() {
-    let rules = Rules { size: 4, queue_len: 4, size_weights: [0.0, 1.0, 1.0], ..Rules::default() };
+    let rules = Rules { size: 4, slots: 4, size_weights: [0.0, 1.0, 1.0], ..Rules::default() };
     let g = Game::with_board(rules, 11, Board::parse(&HOLES));
-    for c in g.queue() {
+    for c in g.slots() {
         assert!(fits_anywhere(g.board(), c), "{c:?}");
         assert_eq!(c.len(), 1, "only single dice fit isolated holes");
     }
@@ -448,10 +455,10 @@ fn no_dead_clusters_in_a_new_game() {
 fn no_dead_clusters_after_a_turn() {
     let rules = Rules { size: 4, ..Rules::default() };
     let mut g = Game::with_board(rules, 11, Board::parse(&HOLES));
-    g.set_queue(vec![single(6), cluster(&[(0, 0, 1), (1, 0, 2)])]);
-    let turn = g.place(0, Pos::new(1, 1)).unwrap();
+    g.set_slots(vec![single(6), cluster(&[(0, 0, 1), (1, 0, 2)])]);
+    let turn = g.place(0, 0, Pos::new(1, 1)).unwrap();
     assert!(turn.steps.iter().any(|s| matches!(s, Step::Replace { index: 0, .. })), "{:?}", turn.steps);
-    assert!(g.queue().iter().all(|c| fits_anywhere(g.board(), c)));
+    assert!(g.slots().iter().all(|c| fits_anywhere(g.board(), c)));
 }
 
 // Ending
@@ -460,19 +467,19 @@ fn no_dead_clusters_after_a_turn() {
 fn ending_when_full_after_settling() {
     let rows = ["1 2 3 4", "5 6 7 8", "2 3 4 5", "6 7 8 ."];
     let mut g = Game::with_board(Rules { size: 4, ..Rules::default() }, 1, Board::parse(&rows));
-    g.set_queue(vec![single(1), single(2)]);
-    let turn = g.place(0, Pos::new(3, 3)).unwrap();
+    g.set_slots(vec![single(1), single(2)]);
+    let turn = g.place(0, 0, Pos::new(3, 3)).unwrap();
     assert_eq!(turn.steps.last(), Some(&Step::End));
     assert!(g.is_over());
-    assert_eq!(g.place(0, Pos::new(0, 0)), Err(PlaceError::Over));
+    assert_eq!(g.place(0, 0, Pos::new(0, 0)), Err(PlaceError::Over));
 }
 
 #[test]
 fn ending_not_while_a_merge_frees_cells() {
     let rows = ["1 2 3 4", "5 6 7 8", "2 3 4 5", "6 7 5 ."];
     let mut g = Game::with_board(Rules { size: 4, ..Rules::default() }, 1, Board::parse(&rows));
-    g.set_queue(vec![single(5), single(2)]);
-    let turn = g.place(0, Pos::new(3, 3)).unwrap();
+    g.set_slots(vec![single(5), single(2)]);
+    let turn = g.place(0, 0, Pos::new(3, 3)).unwrap();
     assert_eq!(merges(&turn).len(), 1);
     assert!(!g.is_over());
 }
@@ -488,7 +495,7 @@ fn same_seed_same_game() {
             log.push(
                 {
                     let p = first_fit(&mut g);
-                    g.place(0, p)
+                    g.place(0, 0, p)
                 }
                 .unwrap(),
             );
@@ -510,20 +517,20 @@ fn invariants_hold_through_random_games() {
                 break;
             }
             for _ in 0..rng.below(4) {
-                g.rotate();
+                g.rotate(0);
             }
             let mut moves = legal(&g);
             for _ in 0..3 {
                 if moves.is_empty() {
-                    g.rotate();
+                    g.rotate(0);
                     moves = legal(&g);
                 }
             }
             assert!(!moves.is_empty(), "no dead clusters");
             let (a, p) = moves[rng.below(moves.len())];
-            g.place(a, p).unwrap();
+            g.place(0, a, p).unwrap();
 
-            assert_eq!(g.queue().len(), rules.queue_len);
+            assert_eq!(g.slots().len(), rules.slots);
             assert!(g.board().neighborhoods().iter().all(|h| h.len() < rules.threshold), "settled to a fixed point");
             if let Some(dir) = gravity {
                 assert!(g.board().is_settled(dir));

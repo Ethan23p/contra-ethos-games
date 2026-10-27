@@ -1,7 +1,7 @@
 //! Dice Merge: the rules from `crates/dice`, drawn and animated with the engine.
 //!
-//! Drag the piece from below the board onto it; tap anywhere to rotate it. A
-//! placed turn plays back as a timeline (see `player.rs`), and placing again
+//! Drag any of the staged clusters below the board onto it; tap one to rotate
+//! it. Its slot restocks once it's placed. A placed turn plays back as a timeline (see `player.rs`), and placing again
 //! mid-animation skips to its end, so fast play never waits.
 //!
 //! Native: `cargo run -p dice-app`, or `-- --snapshot out.png` for a headless
@@ -14,9 +14,9 @@ mod player;
 use std::collections::HashMap;
 use std::f32::consts::{FRAC_PI_2, TAU};
 
-use dice::{Cluster, Game, Pos};
+use dice::{Cluster, Game, Pos, Step};
 use engine::glam::Vec2;
-use engine::{App, Frame, Input, Shapes, Tuner, View, rgb, rgba};
+use engine::{App, Frame, Input, Screen, Shapes, Tuner, View, rgb, rgba};
 
 use config::Config;
 use look::*;
@@ -26,14 +26,16 @@ const BEST_KEY: &str = "dice-best";
 
 enum Hand {
     Idle,
-    /// Holding the head by its cell `grab`; `finger` is in world units.
+    /// Holding a slot's cluster by its cell `grab`; `finger` is in world units.
     Dragging {
+        slot: usize,
         grab: usize,
         finger: Vec2,
         since: f32,
     },
-    /// Springing back to the queue after a rejected drop.
+    /// Springing back to its slot after a rejected drop.
     Returning {
+        slot: usize,
         pos: Vec2,
         vel: Vec2,
         pitch: f32,
@@ -53,10 +55,12 @@ struct DiceApp {
     game: Game,
     player: Player,
     view: View,
+    staging: Staging,
     hand: Hand,
-    turn: Turn,
-    /// When the queue last changed, for the entrance pop.
-    entered: f32,
+    /// Each slot's latest turn.
+    turns: Vec<Turn>,
+    /// When each slot was last restocked, for the entrance pop.
+    entered: Vec<f32>,
     best: f64,
     /// Whether the best score is saved; off for headless snapshots.
     persist: bool,
@@ -67,79 +71,100 @@ impl DiceApp {
     fn new(tuner: Tuner<Config>, seed: u64) -> Self {
         let game = Game::new(tuner.current.rules(), seed);
         let best = engine::tune::storage::load(BEST_KEY).and_then(|s| s.trim().parse().ok()).unwrap_or(0.0);
-        Self {
+        let n = game.slots().len();
+        let mut app = Self {
             player: Player::new(game.board().clone()),
             game,
             tuner,
             view: View::PIXELS,
+            staging: Staging { centers: Vec::new(), half: Vec2::ZERO, pitch: 0.0 },
             hand: Hand::Idle,
-            turn: Turn { from: 0.0, start: 0.0, secs: 0.0 },
-            entered: 0.0,
+            turns: (0..n).map(|_| Turn { from: 0.0, start: 0.0, secs: 0.0 }).collect(),
+            entered: vec![0.0; n],
             best,
             persist: true,
             time: 0.0,
-        }
+        };
+        // A stand-in until the first frame lays out the real screen.
+        app.hud(Screen::new(Vec2::new(375.0, 812.0), 1.0));
+        app
+    }
+
+    /// Lays out the screen, keeping the view and the slots for input.
+    fn hud(&mut self, screen: Screen) -> Hud {
+        let hud = Hud::new(screen, self.game.slots().len(), self.layout().pitch, &self.tuner.current);
+        self.view = hud.view;
+        self.staging = hud.staging.clone();
+        hud
     }
 
     fn new_game(&mut self) {
         self.game = Game::new(self.tuner.current.rules(), fresh_seed());
         self.player = Player::new(self.game.board().clone());
         self.hand = Hand::Idle;
-        self.entered = self.time;
+        let n = self.game.slots().len();
+        self.turns = (0..n).map(|_| Turn { from: 0.0, start: 0.0, secs: 0.0 }).collect();
+        self.entered = vec![self.time; n];
     }
 
     fn layout(&self) -> Layout {
         Layout::new(self.game.rules.size)
     }
 
-    fn rotate(&mut self) {
+    fn rotate(&mut self, slot: usize) {
         let c = &self.tuner.current;
-        let heaviest = self.game.head().cells.iter().map(|d| d.1).max().unwrap_or(1);
-        let (from, ms) = if self.game.head().len() == 1 {
+        let cluster = self.game.slot(slot);
+        let heaviest = cluster.cells.iter().map(|d| d.1).max().unwrap_or(1);
+        let (from, ms) = if cluster.len() == 1 {
             (-TAU, c.spin_ms)
         } else {
             (-FRAC_PI_2, (c.rotate_ms * c.weight(heaviest)).min(c.rotate_max_ms))
         };
-        self.game.rotate();
-        self.turn = Turn { from, start: self.time, secs: ms / 1000.0 };
+        self.game.rotate(slot);
+        self.turns[slot] = Turn { from, start: self.time, secs: ms / 1000.0 };
     }
 
-    fn turn_angle(&self) -> f32 {
-        let k = if self.turn.secs > 0.0 { (self.time - self.turn.start) / self.turn.secs } else { 1.0 };
-        self.turn.from * (1.0 - ease_out(k))
+    fn turn_angle(&self, slot: usize) -> f32 {
+        let t = &self.turns[slot];
+        let k = if t.secs > 0.0 { (self.time - t.start) / t.secs } else { 1.0 };
+        t.from * (1.0 - ease_out(k))
     }
 
-    /// Where the dragged head's grabbed die is drawn: above the finger, lifted in.
+    /// Where the dragged cluster's grabbed die is drawn: above the finger, lifted in.
     fn grabbed_at(&self, grab_finger: Vec2, since: f32) -> Vec2 {
         let c = &self.tuner.current;
         let k = ease_out((self.time - since) / (c.lift_ms / 1000.0).max(1e-3));
         grab_finger - Vec2::new(0.0, c.lift * self.layout().pitch * k)
     }
 
-    /// Board cell the head's `grab` cell would land on, and whether it's legal.
-    fn target(&self, grab: usize, finger: Vec2, since: f32) -> (Pos, bool) {
+    /// Board cell a slot's `grab` cell would land on, and whether it's legal.
+    fn target(&self, slot: usize, grab: usize, finger: Vec2, since: f32) -> (Pos, bool) {
         let at = self.layout().cell_at(self.grabbed_at(finger, since));
-        (at, self.game.can_place(grab, at))
+        (at, self.game.can_place(slot, grab, at))
     }
 
-    fn drop_head(&mut self, grab: usize, finger: Vec2, since: f32) {
+    fn drop_cluster(&mut self, slot: usize, grab: usize, finger: Vec2, since: f32) {
         let layout = self.layout();
-        let (at, ok) = self.target(grab, finger, since);
+        let (at, ok) = self.target(slot, grab, finger, since);
+        let held = self.game.slot(slot).clone();
         if ok {
             let grabbed = self.grabbed_at(finger, since);
-            let dropped: HashMap<Pos, Vec2> = self
-                .game
-                .head()
+            let dropped: HashMap<Pos, Vec2> = held
                 .cells_at(grab, at)
-                .zip(&self.game.head().cells)
+                .zip(&held.cells)
                 .map(|((p, _), (off, _))| {
-                    let rel = cell(*off) - cell(self.game.head().cells[grab].0);
+                    let rel = cell(*off) - cell(held.cells[grab].0);
                     (p, layout.cell_of(grabbed + rel * layout.pitch))
                 })
                 .collect();
-            let turn = self.game.place(grab, at).expect("checked legal");
+            let turn = self.game.place(slot, grab, at).expect("checked legal");
+            for step in &turn.steps {
+                if let Step::Spawn { index, .. } | Step::Replace { index, .. } = step {
+                    self.entered[*index] = self.time;
+                    self.turns[*index].secs = 0.0;
+                }
+            }
             self.player.play(self.time, turn.steps, dropped, &self.tuner.current);
-            self.entered = self.time;
             self.hand = Hand::Idle;
             if self.game.score() > self.best {
                 self.best = self.game.score();
@@ -148,32 +173,27 @@ impl DiceApp {
                 }
             }
         } else {
-            let cells: Vec<Pos> = self
-                .game
-                .head()
-                .cells_at(grab, at)
-                .map(|(p, _)| p)
-                .filter(|&p| self.game.board().contains(p))
-                .collect();
+            let cells: Vec<Pos> =
+                held.cells_at(grab, at).map(|(p, _)| p).filter(|&p| self.game.board().contains(p)).collect();
             if !cells.is_empty() {
                 self.player.shake(self.time, cells);
             }
-            let pos = self.cluster_center_from_grab(grab, self.grabbed_at(finger, since), layout.pitch);
-            let dist = (pos - HEAD_SLOT).length().max(1e-3);
-            self.hand = Hand::Returning { pos, vel: Vec2::ZERO, pitch: layout.pitch, dist };
+            let pos = self.cluster_center_from_grab(slot, grab, self.grabbed_at(finger, since), layout.pitch);
+            let dist = (pos - self.staging.centers[slot]).length().max(1e-3);
+            self.hand = Hand::Returning { slot, pos, vel: Vec2::ZERO, pitch: layout.pitch, dist };
         }
     }
 
-    fn cluster_center_from_grab(&self, grab: usize, grabbed: Vec2, pitch: f32) -> Vec2 {
-        let head = self.game.head();
-        grabbed - (cell(head.cells[grab].0) - mid(head)) * pitch
+    fn cluster_center_from_grab(&self, slot: usize, grab: usize, grabbed: Vec2, pitch: f32) -> Vec2 {
+        let cluster = self.game.slot(slot);
+        grabbed - (cell(cluster.cells[grab].0) - mid(cluster)) * pitch
     }
 
-    /// Keeps the game's rules in step with the panel. Board size and queue
-    /// length start a new game; the rest apply mid-game.
+    /// Keeps the game's rules in step with the panel. Board size and the
+    /// number of slots start a new game; the rest apply mid-game.
     fn sync_rules(&mut self) {
         let rules = self.tuner.current.rules();
-        if rules.size != self.game.rules.size || rules.queue_len != self.game.rules.queue_len {
+        if rules.size != self.game.rules.size || rules.slots != self.game.rules.slots {
             self.new_game();
         } else if rules != self.game.rules {
             self.game.rules = rules;
@@ -206,27 +226,33 @@ impl App for DiceApp {
         let view = self.view;
         let world = |p: Vec2| view.to_world(p);
         match input {
-            Input::Tap(_) => {
+            Input::Tap(p) => {
                 if self.game.is_over() && !self.player.busy() {
                     self.new_game();
-                } else if matches!(self.hand, Hand::Idle) && !self.game.is_over() {
-                    self.rotate();
+                } else if let Some(slot) = self.staging.slot_at(world(p))
+                    && matches!(self.hand, Hand::Idle)
+                    && !self.game.is_over()
+                {
+                    self.rotate(slot);
                 }
             }
             Input::DragStart(p) => {
                 let p = world(p);
-                // Anywhere below the board picks up the head, by its nearest die.
-                if !self.game.is_over() && p.y > self.layout().bottom() {
-                    let head = self.game.head();
-                    let nearest = (0..head.len())
+                // Anywhere in a slot picks up its cluster, by the nearest die.
+                if let Some(slot) = self.staging.slot_at(p)
+                    && !self.game.is_over()
+                {
+                    let (cluster, center) = (self.game.slot(slot), self.staging.centers[slot]);
+                    let nearest = (0..cluster.len())
                         .min_by(|&a, &b| {
-                            let d =
-                                |i: usize| (HEAD_SLOT + (cell(head.cells[i].0) - mid(head)) * HEAD_PITCH - p).length();
+                            let d = |i: usize| {
+                                (center + (cell(cluster.cells[i].0) - mid(cluster)) * self.staging.pitch - p).length()
+                            };
                             d(a).total_cmp(&d(b))
                         })
                         .unwrap();
-                    self.turn.secs = 0.0;
-                    self.hand = Hand::Dragging { grab: nearest, finger: p, since: self.time };
+                    self.turns[slot].secs = 0.0;
+                    self.hand = Hand::Dragging { slot, grab: nearest, finger: p, since: self.time };
                 }
             }
             Input::Drag(p) => {
@@ -235,8 +261,8 @@ impl App for DiceApp {
                 }
             }
             Input::DragEnd(p) => {
-                if let Hand::Dragging { grab, since, .. } = self.hand {
-                    self.drop_head(grab, world(p), since);
+                if let Hand::Dragging { slot, grab, since, .. } = self.hand {
+                    self.drop_cluster(slot, grab, world(p), since);
                 }
             }
             _ => {}
@@ -247,12 +273,13 @@ impl App for DiceApp {
         self.time += dt;
         self.sync_rules();
         let c = &self.tuner.current;
-        if let Hand::Returning { pos, vel, .. } = &mut self.hand {
+        if let Hand::Returning { slot, pos, vel, .. } = &mut self.hand {
+            let home = self.staging.centers[*slot];
             let (stiffness, damping) = c.snap_spring();
-            let accel = -stiffness * (*pos - HEAD_SLOT) - damping * *vel;
+            let accel = -stiffness * (*pos - home) - damping * *vel;
             *vel += accel * dt;
             *pos += *vel * dt;
-            if (*pos - HEAD_SLOT).length() < 0.05 && vel.length() < 0.5 {
+            if (*pos - home).length() < 0.05 && vel.length() < 0.5 {
                 self.hand = Hand::Idle;
             }
         }
@@ -263,8 +290,7 @@ impl App for DiceApp {
         let c = self.tuner.current.clone();
         let now = self.time;
         s.clear = rgb(BG);
-        let hud = Hud::new(f.screen());
-        self.view = hud.view;
+        let hud = self.hud(f.screen());
         s.view = self.view;
         let layout = self.layout();
         let die = layout.die(&c);
@@ -274,10 +300,10 @@ impl App for DiceApp {
         layout.draw(s);
 
         // Drop preview.
-        if let Hand::Dragging { grab, finger, since } = self.hand {
-            let (at, ok) = self.target(grab, finger, since);
+        if let Hand::Dragging { slot, grab, finger, since } = self.hand {
+            let (at, ok) = self.target(slot, grab, finger, since);
             let tint = if ok { ACCENT } else { RED };
-            for (p, _) in self.game.head().cells_at(grab, at) {
+            for (p, _) in self.game.slot(slot).cells_at(grab, at) {
                 if self.game.board().contains(p) {
                     layout
                         .cell_rect(s, p, Vec2::ZERO, rgba(tint, if ok { 0.28 } else { 0.22 }))
@@ -375,29 +401,30 @@ impl App for DiceApp {
             }
         }
 
-        // Hint and queue.
-        s.text(Vec2::new(0.0, 37.0), hud.em_world(0.75), "DRAG TO PLACE · TAP TO ROTATE", rgb(DIM));
-        let entrance = ease_out((now - self.entered) / (c.entrance_ms / 1000.0).max(1e-3));
-        let enter_scale = c.entrance_scale + (1.0 - c.entrance_scale) * entrance;
-        let queue = self.game.queue();
-        let rest = &queue[1..];
-        for (i, cluster) in rest.iter().enumerate() {
-            let x = (i as f32 - (rest.len() as f32 - 1.0) * 0.5) * 24.0;
-            self.draw_cluster(s, cluster, Vec2::new(x, NEXT_Y), NEXT_PITCH * enter_scale, 0.0, 0.7);
+        // Hint and staging. The held cluster is drawn last, above the rest.
+        hud.hint(s, "DRAG TO PLACE · TAP TO ROTATE");
+        let held = match self.hand {
+            Hand::Dragging { slot, .. } | Hand::Returning { slot, .. } => Some(slot),
+            Hand::Idle => None,
+        };
+        let pitch = self.staging.pitch;
+        if !self.game.is_over() {
+            for (i, cluster) in self.game.slots().iter().enumerate().filter(|&(i, _)| Some(i) != held) {
+                let k = ease_out((now - self.entered[i]) / (c.entrance_ms / 1000.0).max(1e-3));
+                let scale = c.entrance_scale + (1.0 - c.entrance_scale) * k;
+                self.draw_cluster(s, cluster, self.staging.centers[i], pitch * scale, self.turn_angle(i), 1.0);
+            }
         }
         match self.hand {
-            Hand::Idle if !self.game.is_over() => {
-                self.draw_cluster(s, &queue[0], HEAD_SLOT, HEAD_PITCH * enter_scale, self.turn_angle(), 1.0);
+            Hand::Returning { slot, pos, pitch: from, dist, .. } => {
+                let k = ((pos - self.staging.centers[slot]).length() / dist).min(1.0);
+                self.draw_cluster(s, self.game.slot(slot), pos, pitch + (from - pitch) * k, 0.0, 1.0);
             }
-            Hand::Returning { pos, pitch, dist, .. } => {
-                let k = ((pos - HEAD_SLOT).length() / dist).min(1.0);
-                self.draw_cluster(s, &queue[0], pos, HEAD_PITCH + (pitch - HEAD_PITCH) * k, 0.0, 1.0);
+            Hand::Dragging { slot, grab, finger, since } => {
+                let center = self.cluster_center_from_grab(slot, grab, self.grabbed_at(finger, since), layout.pitch);
+                self.draw_cluster(s, self.game.slot(slot), center, layout.pitch, 0.0, 1.0);
             }
-            Hand::Dragging { grab, finger, since } => {
-                let center = self.cluster_center_from_grab(grab, self.grabbed_at(finger, since), layout.pitch);
-                self.draw_cluster(s, &queue[0], center, layout.pitch, 0.0, 1.0);
-            }
-            _ => {}
+            Hand::Idle => {}
         }
 
         // Game over.
@@ -432,9 +459,11 @@ fn scripted() -> DiceApp {
     (app.persist, app.best) = (false, 0.0);
     app.game = Game::with_board(app.game.rules.clone(), 1, dice::Board::parse(&rows));
     app.player = Player::new(app.game.board().clone());
-    let mut queue = app.game.queue().to_vec();
-    queue[0] = Cluster { cells: vec![(Pos::new(0, 0), 1)] };
-    app.game.set_queue(queue);
+    let mut slots = app.game.slots().to_vec();
+    slots[0] = Cluster { cells: vec![(Pos::new(0, 0), 1)] };
+    app.game.set_slots(slots);
+    // Settled in, past their entrance pop.
+    app.entered.fill(-10.0);
     app
 }
 
@@ -447,18 +476,18 @@ fn main() {
             let mut app = scripted();
             let layout = app.layout();
             app.tuner.current.lift = 0.0;
-            app.drop_head(0, layout.center(Pos::new(2, 2)), -1.0);
+            app.drop_cluster(0, 0, layout.center(Pos::new(2, 2)), -1.0);
             let times = [0.0, 0.2, 0.35, 0.5, 0.65, 0.9, 1.3];
-            engine::headless::snapshot_strip(&mut app, 300, 510, &times, path(i).as_ref());
+            engine::headless::snapshot_strip(&mut app, 375, 812, &times, path(i).as_ref());
             println!("wrote {}", path(i));
             return;
         }
         if let Some(i) = args.iter().position(|a| a == "--snapshot-drag") {
             let mut app = scripted();
             let layout = app.layout();
-            app.hand = Hand::Dragging { grab: 0, finger: layout.center(Pos::new(4, 3)), since: -1.0 };
+            app.hand = Hand::Dragging { slot: 0, grab: 0, finger: layout.center(Pos::new(4, 3)), since: -1.0 };
             app.tuner.current.lift = 0.0;
-            engine::headless::snapshot_strip(&mut app, 300, 510, &[0.0], path(i).as_ref());
+            engine::headless::snapshot_strip(&mut app, 375, 812, &[0.0], path(i).as_ref());
             println!("wrote {}", path(i));
             return;
         }

@@ -1,4 +1,4 @@
-//! Clusters: the 1–3-die polyominoes in the queue, and Spawn, which draws them.
+//! Clusters: the 1–3-die polyominoes on offer, and Spawn, which draws them.
 
 use crate::Rules;
 use crate::board::Pos;

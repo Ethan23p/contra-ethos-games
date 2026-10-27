@@ -21,15 +21,15 @@ pub struct Merge {
 /// One beat of a turn, in order, for presentation to animate.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Step {
-    /// The head cluster's dice written into the board.
+    /// The placed cluster's dice written into the board.
     Place(Vec<(Pos, Die)>),
     /// Dice sliding under gravity.
     Fall(Vec<Move>),
     /// One settling generation: every qualifying neighborhood, merging at once.
     Merge(Vec<Merge>),
-    /// A newly spawned cluster appended to the queue.
-    Spawn(Cluster),
-    /// A queued cluster that no longer fit anywhere, replaced by one that does.
+    /// A newly spawned cluster restocking the slot the placed one left.
+    Spawn { index: usize, cluster: Cluster },
+    /// A slot's cluster that no longer fit anywhere, replaced by one that does.
     Replace { index: usize, cluster: Cluster },
     /// The board is full after settling: the game is over.
     End,
@@ -54,7 +54,7 @@ pub enum PlaceError {
 pub struct Game {
     pub rules: Rules,
     board: Board,
-    queue: Vec<Cluster>,
+    slots: Vec<Cluster>,
     score: f64,
     over: bool,
     rng: Rng,
@@ -75,10 +75,10 @@ impl Game {
     /// are all older than anything placed from here on.
     pub fn with_board(rules: Rules, seed: u64, board: Board) -> Self {
         let tick = board.dice().map(|(_, d)| d.born).max().unwrap_or(0);
-        let mut game = Self { rules, board, queue: Vec::new(), score: 0.0, over: false, rng: Rng::new(seed), tick };
-        while game.queue.len() < game.rules.queue_len.max(1) {
+        let mut game = Self { rules, board, slots: Vec::new(), score: 0.0, over: false, rng: Rng::new(seed), tick };
+        while game.slots.len() < game.rules.slots.max(1) {
             let c = cluster::spawn(&game.rules, &mut game.rng);
-            game.queue.push(c);
+            game.slots.push(c);
         }
         game.replace_dead();
         game
@@ -88,13 +88,13 @@ impl Game {
         &self.board
     }
 
-    pub fn queue(&self) -> &[Cluster] {
-        &self.queue
+    /// The clusters on offer, any of which may be placed.
+    pub fn slots(&self) -> &[Cluster] {
+        &self.slots
     }
 
-    /// The head cluster, the one in play.
-    pub fn head(&self) -> &Cluster {
-        &self.queue[0]
+    pub fn slot(&self, index: usize) -> &Cluster {
+        &self.slots[index]
     }
 
     pub fn score(&self) -> f64 {
@@ -105,37 +105,38 @@ impl Game {
         self.over
     }
 
-    /// Replaces the queue, for tests and set-up positions.
-    pub fn set_queue(&mut self, queue: Vec<Cluster>) {
-        self.queue = queue;
+    /// Replaces the slots, for tests and set-up positions.
+    pub fn set_slots(&mut self, slots: Vec<Cluster>) {
+        self.slots = slots;
     }
 
-    /// Rotate: a clockwise quarter-turn of the head cluster. Always free.
-    pub fn rotate(&mut self) {
-        self.queue[0] = self.queue[0].rotated();
+    /// Rotate: a clockwise quarter-turn of a slot's cluster. Always free.
+    pub fn rotate(&mut self, slot: usize) {
+        self.slots[slot] = self.slots[slot].rotated();
     }
 
-    /// Legality: whether the head may go with its cell `anchor` at `at`.
-    pub fn can_place(&self, anchor: usize, at: Pos) -> bool {
-        fits_at(&self.board, self.head(), anchor, at)
+    /// Legality: whether a slot's cluster may go with its cell `anchor` at `at`.
+    pub fn can_place(&self, slot: usize, anchor: usize, at: Pos) -> bool {
+        self.slots.get(slot).is_some_and(|c| fits_at(&self.board, c, anchor, at))
     }
 
-    /// Place, then Merge to a fixed point, then Spawn: the rest of a turn.
-    pub fn place(&mut self, anchor: usize, at: Pos) -> Result<Turn, PlaceError> {
+    /// Place, then Merge to a fixed point, then Spawn into the emptied slot:
+    /// the rest of a turn.
+    pub fn place(&mut self, slot: usize, anchor: usize, at: Pos) -> Result<Turn, PlaceError> {
         if self.over {
             return Err(PlaceError::Over);
         }
-        if !self.can_place(anchor, at) {
+        if !self.can_place(slot, anchor, at) {
             return Err(PlaceError::Illegal);
         }
         let start_score = self.score;
-        let head = self.queue.remove(0);
-        let mut steps = vec![Step::Place(self.write(&head, anchor, at))];
+        let placed = self.slots[slot].clone();
+        let mut steps = vec![Step::Place(self.write(&placed, anchor, at))];
         self.settle(&mut steps);
 
         let c = cluster::spawn(&self.rules, &mut self.rng);
-        self.queue.push(c.clone());
-        steps.push(Step::Spawn(c));
+        self.slots[slot] = c.clone();
+        steps.push(Step::Spawn { index: slot, cluster: c });
         if self.board.is_full() {
             self.over = true;
             steps.push(Step::End);
@@ -221,15 +222,15 @@ impl Game {
         tied[self.rng.below(tied.len())]
     }
 
-    /// No dead clusters: replaces each queued cluster that fits nowhere in any
+    /// No dead clusters: replaces each slot's cluster that fits nowhere in any
     /// rotation with a fresh one that does. Returns what it replaced.
     fn replace_dead(&mut self) -> Vec<(usize, Cluster)> {
         if self.board.is_full() {
             return Vec::new();
         }
         let mut replaced = Vec::new();
-        for index in 0..self.queue.len() {
-            if fits_anywhere(&self.board, &self.queue[index]) {
+        for index in 0..self.slots.len() {
+            if fits_anywhere(&self.board, &self.slots[index]) {
                 continue;
             }
             let fresh = (0..RESPAWN_TRIES)
@@ -240,7 +241,7 @@ impl Game {
                     let rules = Rules { size_weights: [1.0, 0.0, 0.0], ..self.rules.clone() };
                     cluster::spawn(&rules, &mut self.rng)
                 });
-            self.queue[index] = fresh.clone();
+            self.slots[index] = fresh.clone();
             replaced.push((index, fresh));
         }
         replaced
