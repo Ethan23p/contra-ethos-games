@@ -2,7 +2,7 @@
 
 The living plan for rebuilding Dice Merge and Blob Merge in Rust + WebGPU and publishing them on contra-ethos.com. Tick steps as they land, and log decisions at the bottom.
 
-**Current phase: 3, Blob Merge (last item).** `crates/blob` has the field, its physics and every spec rule (`Game`, `Rules`), with policy tests. `apps/blob` at play.contra-ethos.com/blob/ is playable end to end. Ethan's phone pass (2026-10-31) found the look splendid, and the two-slot dice supply a great change to the gameplay. Next: the overflow warning, then Phase 4.
+**Current phase: 4, Publish.** Both games are playable end to end at play.contra-ethos.com. Ethan's phone pass (2026-10-31) found the look splendid, and the two-slot dice supply a great change to the gameplay.
 
 ## Goal state
 
@@ -71,7 +71,7 @@ The discrete game comes first: it's the cheapest way to prove the spec → code 
 - [x] Policies with tests: motion, identity, threshold and m, bonding, merging (convergence on the shared centre, joins during convergence, bigger jumps for bigger merges), launching, seeding.
 - [x] Policies with tests: pool window, draw, scoring and combo, nova, ending (`Game`, `Rules`).
 - [x] The gloopy merge look: `engine::Goo`, a smooth-union SDF pass. Identical blobs fuse within the blend, merging blobs flow together, bonds draw as tethers; each pixel is drawn by its nearest circle only, so groups render once without seams, in one draw call (`goo.rs`, `goo.wgsl`, `apps/blob/src/look.rs`).
-- [ ] The overflow warning, beyond the rim's red pulse.
+- [x] The overflow warning, beyond the rim's red pulse: after a second outside, a ring closes on each stray and reaches it as the grace ends, the screen edges glow, and the last 3 seconds count down over the field. All in the panel's Overflow warning group.
 - [x] Physics presets and live tuning: every `Physics` constant in the panel; the old build's Light / Flowey, Thick Liquid and Clay Clumps as presets.
 - [x] Physics sandbox (`apps/blob`): plain circles, bonds as bridges, aim and release to launch. Tuned by Ethan (2026-10-24).
 - [x] The rules in the app: score and combo readout, the pool, points rising from merges, purge and nova placeholders, the rim pulsing as a blob runs down the grace, game over and tap to play again.

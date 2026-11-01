@@ -17,13 +17,12 @@ use engine::glam::Vec2;
 use engine::{Anchor, App, Frame, Input, Phase, Screen, Shapes, Tuner, View, rgb, rgba};
 
 use config::Config;
-use look::{Birth, Drawn, Drops};
+use look::{Birth, Drawn, Drops, RED};
 
 const BG: u32 = 0x08090c;
 const LINE: u32 = 0x2c2f38;
 const DIM: u32 = 0x8b8f9c;
 const TEXT: u32 = 0xf2f4f8;
-const RED: u32 = 0xd9564f;
 
 /// Height of the band at the top, in ems.
 const BAND: f32 = 3.5;
@@ -329,6 +328,23 @@ impl App for BlobApp {
         look::draw_field(s, &c, &blobs, bonds, peak, now);
         self.drops.draw(s, now);
 
+        // The overflow warning: which blobs, how long, and how close overall.
+        let mut urgent = None::<(f32, f32)>;
+        if self.ended.is_none() {
+            for &(id, t) in &self.game.outside {
+                let Some(k) = look::warning(&c, t) else { continue };
+                if let Some(b) = blobs.iter().find(|b| b.id == id) {
+                    look::warning_ring(s, &c, b.pos, b.r, t);
+                }
+                if urgent.is_none_or(|(most, _)| k > most) {
+                    urgent = Some((k, c.grace - t));
+                }
+            }
+        }
+        if let Some((_, left)) = urgent {
+            look::countdown(s, &c, centre, left);
+        }
+
         if self.ended.is_none() {
             let (g, v) = self.game.queue[0];
             look::draw_one(s, &c, launcher, drawn, g, v, v == peak, now);
@@ -349,6 +365,10 @@ impl App for BlobApp {
 
         // The band: a plain readout on the left, the next blob on the right.
         s.view = View::PIXELS;
+        if let Some((k, _)) = urgent.filter(|_| c.warn_edge > 0.0) {
+            let alpha = c.warn_edge * (0.3 + 0.7 * k) * (0.7 + 0.3 * pulse);
+            look::edge_glow(s, screen.size, screen.em(c.warn_edge_width), alpha);
+        }
         let left = |s: &Shapes, size: f32, text: &str, y: f32| {
             screen.at(Anchor::TOP_LEFT, Vec2::new(screen.em(1.0) + s.text_width(size, text) * 0.5, screen.em(y)))
         };
@@ -430,6 +450,32 @@ fn main() {
             app.born.clear();
             let times = [0.02, 0.15, 0.32, 0.6, 1.1];
             engine::headless::snapshot_strip(&mut app, 520, 600, &times, path.as_ref());
+            println!("wrote {path}");
+            return;
+        }
+        if let Some(i) = args.iter().position(|a| a == "--snapshot-warn") {
+            // No well, so two strays sit outside the rim and run down the grace.
+            let path = args.get(i + 1).map_or("warn.png", String::as_str).to_string();
+            let mut app = BlobApp::new(Tuner::unsaved(), 7);
+            let c = &mut app.tuner.current;
+            (c.well, c.centre_follow) = (0.0, 0.0);
+            app.reset();
+            let f = &mut app.game.field;
+            *f = blob::Field::new();
+            for (g, v, x, y) in [
+                (0, 8, -40.0, -30.0),
+                (1, 4, 24.0, -36.0),
+                (2, 16, -10.0, 34.0),
+                (1, 2, 62.0, 30.0),
+                (0, 32, 150.0, -60.0),
+                (2, 4, -120.0, 110.0),
+            ] {
+                f.add(g, v, Vec2::new(x, y));
+            }
+            app.born.clear();
+            app.prev_centre = app.game.field.centre;
+            let times = [0.5, 1.2, 3.0, 4.0, 5.2, 6.2];
+            engine::headless::snapshot_strip(&mut app, 375, 640, &times, path.as_ref());
             println!("wrote {path}");
             return;
         }

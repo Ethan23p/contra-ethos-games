@@ -18,6 +18,7 @@ const SHINE: u32 = 0xfff6d6;
 const INK: u32 = 0xfbfaf6;
 /// The digits' outline and shadow, off the peak.
 const EDGE: u32 = 0x0b0d12;
+pub const RED: u32 = 0xd9564f;
 
 pub fn blob_color(group: u8, value: u32) -> [f32; 4] {
     // Higher values lighten toward white, a step per doubling.
@@ -43,12 +44,8 @@ pub struct Drawn {
 
 /// The goo style for a blob. Gold marks the peak.
 pub fn style(c: &Config, group: u8, value: u32, gold: bool, r: f32) -> Goo {
-    let mut g = Goo {
-        fill: blob_color(group, value),
-        blend: r * c.blend,
-        link_radius: r * c.link_width,
-        ..Goo::default()
-    };
+    let mut g =
+        Goo { fill: blob_color(group, value), blend: r * c.blend, link_radius: r * c.link_width, ..Goo::default() };
     if gold && c.glimmer {
         g.sheen = c.glimmer_strength;
         g.sheen_color = rgb(SHINE);
@@ -179,6 +176,46 @@ fn number(s: &mut Shapes, c: &Config, pos: Vec2, r: f32, value: u32, gold: bool,
     let digits = s.text(pos, size, &text, rgba(INK, 0.95 * fade));
     if c.digit_outline > 0.0 {
         digits.outline(size * c.digit_outline_width, rgba(edge, c.digit_outline * fade));
+    }
+}
+
+/// How far through the warning a blob is after `t` s outside the rim, 0 to 1,
+/// or `None` while it could still be a launch crossing in.
+pub fn warning(c: &Config, t: f32) -> Option<f32> {
+    (t >= c.warn_after).then(|| ((t - c.warn_after) / (c.grace - c.warn_after).max(1e-3)).min(1.0))
+}
+
+/// A ring that closes on a blob outside the rim, reaching it as the grace ends.
+pub fn warning_ring(s: &mut Shapes, c: &Config, pos: Vec2, r: f32, t: f32) {
+    let Some(k) = warning(c, t).filter(|_| c.warn_ring > 0.0) else { return };
+    let fade = ((t - c.warn_after) / 0.25).min(1.0);
+    let size = r * (1.0 + (c.warn_ring_size - 1.0) * (1.0 - k));
+    s.circle(pos, size, rgba(0, 0.0)).outline(r * c.warn_ring_width, rgba(RED, c.warn_ring * fade * (0.5 + 0.5 * k)));
+}
+
+/// The seconds left, large over the field; each one lands bright and dims.
+pub fn countdown(s: &mut Shapes, c: &Config, centre: Vec2, left: f32) {
+    if left > c.warn_from as f32 || c.warn_count <= 0.0 {
+        return;
+    }
+    let beat = left.fract();
+    let beat = if beat == 0.0 { 1.0 } else { beat };
+    let text = (left.ceil() as u32).to_string();
+    s.text(centre, c.rim * 0.9, &text, rgba(RED, c.warn_count * (0.5 + 0.5 * beat)));
+}
+
+/// A red glow in from the screen's edges, `reach` px deep. Drawn in pixels.
+pub fn edge_glow(s: &mut Shapes, size: Vec2, reach: f32, alpha: f32) {
+    // Two depths layered, since one linear falloff ends in a visible line.
+    for (reach, alpha) in [(reach, alpha * 0.5), (reach * 0.45, alpha * 0.5)] {
+        let color = rgba(RED, alpha);
+        // Each strip fades over its own width, and overruns the corners so its
+        // ends don't fade with it.
+        let (across, down) = (Vec2::new(size.x + 2.0 * reach, reach), Vec2::new(reach, size.y + 2.0 * reach));
+        s.rect(Vec2::new(size.x * 0.5, 0.0), across, color).soft(reach);
+        s.rect(Vec2::new(size.x * 0.5, size.y), across, color).soft(reach);
+        s.rect(Vec2::new(0.0, size.y * 0.5), down, color).soft(reach);
+        s.rect(Vec2::new(size.x, size.y * 0.5), down, color).soft(reach);
     }
 }
 

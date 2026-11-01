@@ -68,6 +68,20 @@ pub struct Config {
     pub sparkles: i32,
     pub glint_rate: f32,
     pub wobble: f32,
+    /// The overflow warning waits this long, so a launch crossing in from the
+    /// ring doesn't set it off.
+    pub warn_after: f32,
+    /// The ring closing on a blob outside the rim: opacity (0 is off), where
+    /// it starts × the blob, and its width × the blob.
+    pub warn_ring: f32,
+    pub warn_ring_size: f32,
+    pub warn_ring_width: f32,
+    /// The screen edges' glow: opacity (0 is off) and reach in ems.
+    pub warn_edge: f32,
+    pub warn_edge_width: f32,
+    /// The seconds left over the field: from when (0 is off), and opacity.
+    pub warn_from: i32,
+    pub warn_count: f32,
 }
 
 /// Pairs rest at 2^(1/6) σ.
@@ -162,6 +176,14 @@ impl Config {
             sparkles: 3,
             glint_rate: 0.6,
             wobble: 0.22,
+            warn_after: 1.0,
+            warn_ring: 0.9,
+            warn_ring_size: 2.6,
+            warn_ring_width: 0.1,
+            warn_edge: 0.45,
+            warn_edge_width: 5.0,
+            warn_from: 3,
+            warn_count: 0.45,
             ceiling: r.ceiling as i32,
             window: r.window as i32,
             widen_every: r.widen_every as i32,
@@ -299,7 +321,9 @@ impl Tunable for Config {
             .float("wobble", "Merge pop wobble", "× size", 0.0..=1.0, 0.01, |c| &mut c.wobble);
         s.group("Digits")
             .float("digit_outline", "Outline opacity", "", 0.0..=1.0, 0.01, |c| &mut c.digit_outline)
-            .float("digit_outline_width", "Outline width", "× digit", 0.0..=0.12, 0.005, |c| &mut c.digit_outline_width)
+            .float("digit_outline_width", "Outline width", "× digit", 0.0..=0.12, 0.005, |c| {
+                &mut c.digit_outline_width
+            })
             .float("digit_shadow", "Shadow opacity", "", 0.0..=1.0, 0.01, |c| &mut c.digit_shadow)
             .float("digit_shadow_x", "Shadow shift right", "× digit", -0.4..=0.4, 0.005, |c| &mut c.digit_shadow_x)
             .float("digit_shadow_y", "Shadow shift down", "× digit", -0.4..=0.4, 0.005, |c| &mut c.digit_shadow_y);
@@ -309,6 +333,15 @@ impl Tunable for Config {
             .float("glimmer_strength", "Sheen and glint strength", "", 0.0..=1.0, 0.01, |c| &mut c.glimmer_strength)
             .int("sparkles", "Glints per blob", "", 0..=12, |c| &mut c.sparkles)
             .float("glint_rate", "Glint frequency", "per s", 0.05..=8.0, 0.05, |c| &mut c.glint_rate);
+        s.group("Overflow warning")
+            .float("warn_after", "Warning starts after", "s", 0.0..=20.0, 0.05, |c| &mut c.warn_after)
+            .float("warn_ring", "Closing ring opacity", "", 0.0..=1.0, 0.01, |c| &mut c.warn_ring)
+            .float("warn_ring_size", "Ring starts at", "× blob", 1.0..=8.0, 0.05, |c| &mut c.warn_ring_size)
+            .float("warn_ring_width", "Ring width", "× blob", 0.01..=0.6, 0.01, |c| &mut c.warn_ring_width)
+            .float("warn_edge", "Screen edge opacity", "", 0.0..=1.0, 0.01, |c| &mut c.warn_edge)
+            .float("warn_edge_width", "Screen edge reach", "em", 0.5..=30.0, 0.25, |c| &mut c.warn_edge_width)
+            .int("warn_from", "Count down from", "s", 0..=20, |c| &mut c.warn_from)
+            .float("warn_count", "Countdown opacity", "", 0.0..=1.0, 0.01, |c| &mut c.warn_count);
     }
 
     fn presets() -> Vec<(&'static str, Self)> {
