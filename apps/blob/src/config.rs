@@ -55,11 +55,13 @@ pub struct Config {
     pub blend: f32,
     pub link_width: f32,
     /// The digits' outline and hard drop shadow: opacity (0 is off), and
-    /// size × the digit height.
+    /// size × the digit height. The shadow shifts on both axes, + is right and
+    /// down.
     pub digit_outline: f32,
     pub digit_outline_width: f32,
     pub digit_shadow: f32,
-    pub digit_shadow_offset: f32,
+    pub digit_shadow_x: f32,
+    pub digit_shadow_y: f32,
     pub glimmer: bool,
     pub glimmer_period: f32,
     pub glimmer_strength: f32,
@@ -152,7 +154,8 @@ impl Config {
             digit_outline: 0.0,
             digit_outline_width: 0.06,
             digit_shadow: 0.0,
-            digit_shadow_offset: 0.07,
+            digit_shadow_x: 0.0,
+            digit_shadow_y: 0.07,
             glimmer: true,
             glimmer_period: 3.2,
             glimmer_strength: 0.6,
@@ -298,7 +301,8 @@ impl Tunable for Config {
             .float("digit_outline", "Outline opacity", "", 0.0..=1.0, 0.01, |c| &mut c.digit_outline)
             .float("digit_outline_width", "Outline width", "× digit", 0.0..=0.12, 0.005, |c| &mut c.digit_outline_width)
             .float("digit_shadow", "Shadow opacity", "", 0.0..=1.0, 0.01, |c| &mut c.digit_shadow)
-            .float("digit_shadow_offset", "Shadow drop", "× digit", 0.0..=0.4, 0.005, |c| &mut c.digit_shadow_offset);
+            .float("digit_shadow_x", "Shadow shift right", "× digit", -0.4..=0.4, 0.005, |c| &mut c.digit_shadow_x)
+            .float("digit_shadow_y", "Shadow shift down", "× digit", -0.4..=0.4, 0.005, |c| &mut c.digit_shadow_y);
         s.group("Glimmer (peak blobs)")
             .toggle("glimmer", "Glimmer", |c| &mut c.glimmer)
             .float("glimmer_period", "Sheen every", "s", 0.3..=20.0, 0.1, |c| &mut c.glimmer_period)

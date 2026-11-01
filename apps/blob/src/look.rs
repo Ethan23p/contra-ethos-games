@@ -170,7 +170,7 @@ fn number(s: &mut Shapes, c: &Config, pos: Vec2, r: f32, value: u32, gold: bool,
     let size = r * if text.len() >= 3 { 0.68 } else { 0.94 };
     let edge = if gold { GOLD } else { EDGE };
     if c.digit_shadow > 0.0 {
-        let at = pos + Vec2::new(0.0, size * c.digit_shadow_offset);
+        let at = pos + Vec2::new(c.digit_shadow_x, c.digit_shadow_y) * size;
         let width = if c.digit_outline > 0.0 { size * c.digit_outline_width } else { 0.0 };
         let color = rgba(edge, c.digit_shadow * fade);
         // The shadow takes the outline's footprint too, so it reads as one piece.
