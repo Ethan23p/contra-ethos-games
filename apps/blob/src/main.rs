@@ -459,6 +459,10 @@ impl App for BlobApp {
         Some(&mut self.tuner)
     }
 
+    fn overlay(&self) -> bool {
+        self.menu.dev
+    }
+
     fn config_widget_top(&self) -> bool {
         true
     }

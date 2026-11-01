@@ -66,6 +66,12 @@ pub trait App: 'static {
         None
     }
 
+    /// Whether the config overlay shows at all; games with a menu answer from
+    /// its Dev mode toggle.
+    fn overlay(&self) -> bool {
+        true
+    }
+
     /// Extra controls at the top of the panel's option island ("New game", say).
     fn config_actions(&mut self, _ui: &mut egui::Ui) {}
 

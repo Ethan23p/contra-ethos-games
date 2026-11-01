@@ -1,11 +1,12 @@
-//! The in-game menu: a small button, and a paused overlay with New game. Drawn
-//! from our own primitives, so it reads as part of the game.
+//! The in-game menu: a small button, and a paused overlay with New game and the
+//! Dev mode toggle. Drawn from our own primitives, so it reads as part of the game.
 
 use glam::Vec2;
 
 use crate::input::{Input, Phase};
 use crate::screen::{Anchor, Screen};
 use crate::shapes::{Shapes, View, rgb, rgba};
+use crate::tune::storage;
 
 /// What the menu made of an input.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -20,6 +21,9 @@ pub enum Reply {
 pub struct Menu {
     /// While open, the game pauses.
     pub open: bool,
+    /// Whether the config overlay shows. Per device, across games.
+    pub dev: bool,
+    persist: bool,
     anchor: Anchor,
     /// The button's centre from the anchor, in ems.
     offset: Vec2,
@@ -37,18 +41,24 @@ const CHOICE: Vec2 = Vec2::new(13.0, 3.25);
 
 impl Menu {
     pub fn new(anchor: Anchor, offset: Vec2, ink: u32, surface: u32) -> Self {
-        Self { open: false, anchor, offset, ink, surface, taken: false, pressing: false }
+        let dev = storage::load("dev-mode").is_some_and(|s| s.trim() == "on");
+        Self { dev, persist: true, ..Self::unsaved(anchor, offset, ink, surface) }
+    }
+
+    /// Dev mode off, and a toggle isn't remembered (tests).
+    fn unsaved(anchor: Anchor, offset: Vec2, ink: u32, surface: u32) -> Self {
+        Self { open: false, dev: false, persist: false, anchor, offset, ink, surface, taken: false, pressing: false }
     }
 
     fn button(&self, s: &Screen) -> Vec2 {
         s.at(self.anchor, self.offset * s.em)
     }
 
-    /// The choices' centres, New game first.
-    fn choices(s: &Screen) -> [Vec2; 2] {
-        let gap = s.em(CHOICE.y * 0.5 + 0.4);
+    /// The choices' centres: New game, Resume, Dev mode.
+    fn choices(s: &Screen) -> [Vec2; 3] {
+        let step = Vec2::new(0.0, s.em(CHOICE.y + 0.8));
         let mid = s.at(Anchor::CENTER, Vec2::ZERO);
-        [mid - Vec2::new(0.0, gap), mid + Vec2::new(0.0, gap)]
+        [mid - step, mid, mid + step]
     }
 
     fn on_choice(s: &Screen, center: Vec2, p: Vec2) -> bool {
@@ -82,8 +92,17 @@ impl Menu {
                     self.open = d.max_element() <= screen.em(REACH);
                     return Reply::Taken;
                 }
+                let choices = Self::choices(&screen);
+                if Self::on_choice(&screen, choices[2], p.pos) {
+                    // Stays open, so the switch is seen to move.
+                    self.dev = !self.dev;
+                    if self.persist {
+                        storage::save("dev-mode", if self.dev { "on" } else { "off" });
+                    }
+                    return Reply::Taken;
+                }
                 self.open = false;
-                if Self::on_choice(&screen, Self::choices(&screen)[0], p.pos) { Reply::NewGame } else { Reply::Taken }
+                if Self::on_choice(&screen, choices[0], p.pos) { Reply::NewGame } else { Reply::Taken }
             }
         }
     }
@@ -100,11 +119,22 @@ impl Menu {
         if self.open {
             s.rect(screen.size * 0.5, screen.size, rgba(0, 0.72));
             let size = CHOICE * screen.em;
-            for (center, text) in Self::choices(&screen).into_iter().zip(["NEW GAME", "RESUME"]) {
+            let [new_game, resume, dev] = Self::choices(&screen);
+            for center in [new_game, resume, dev] {
                 s.rounded_rect(center, size, screen.em(0.8), rgb(self.surface))
                     .outline(screen.em(0.08), rgba(self.ink, 0.25));
-                s.text(center, screen.em(1.1), text, rgb(self.ink));
             }
+            s.text(new_game, screen.em(1.1), "NEW GAME", rgb(self.ink));
+            s.text(resume, screen.em(1.1), "RESUME", rgb(self.ink));
+            s.text(dev - Vec2::new(screen.em(1.7), 0.0), screen.em(1.1), "DEV MODE", rgb(self.ink));
+
+            // The switch: a pill, with its knob to the right when on.
+            let track = Vec2::new(screen.em(3.0), screen.em(1.6));
+            let center = dev + Vec2::new(screen.em(4.3), 0.0);
+            let side = if self.dev { 1.0 } else { -1.0 };
+            s.rounded_rect(center, track, track.y * 0.5, rgba(self.ink, if self.dev { 0.6 } else { 0.15 }));
+            let knob = center + Vec2::new(side * (track.x - track.y) * 0.5, 0.0);
+            s.circle(knob, track.y * 0.38, rgb(if self.dev { self.surface } else { self.ink }));
         }
         s.view = view;
     }
@@ -128,7 +158,7 @@ mod tests {
     }
 
     fn menu() -> (Menu, Vec2) {
-        (Menu::new(Anchor::TOP, Vec2::new(0.0, 2.0), 0xffffff, 0), Vec2::new(200.0, 32.0))
+        (Menu::unsaved(Anchor::TOP, Vec2::new(0.0, 2.0), 0xffffff, 0), Vec2::new(200.0, 32.0))
     }
 
     #[test]
@@ -162,6 +192,18 @@ mod tests {
             assert_eq!(tap(&mut m, at), (Reply::Taken, Reply::Taken));
             assert!(!m.open);
         }
+    }
+
+    #[test]
+    fn dev_mode_toggles_and_keeps_the_menu_open() {
+        let (mut m, button) = menu();
+        assert!(!m.dev);
+        tap(&mut m, button);
+        let toggle = Menu::choices(&screen())[2];
+        assert_eq!(tap(&mut m, toggle), (Reply::Taken, Reply::Taken));
+        assert!(m.dev && m.open);
+        tap(&mut m, toggle);
+        assert!(!m.dev && m.open);
     }
 
     #[test]

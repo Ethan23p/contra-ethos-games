@@ -1,17 +1,15 @@
 # CLAUDE.md
 
-This file guides Claude Code when working in this repository. Read it, then `PLAN.md`, before starting any session.
+This file guides Claude Code when working in this repository. Read it, then the [contra-ethos games doc](https://claude.ai/artifact/14yr839S14jSc65zf1gvRj) and `PLAN.md`, before starting any session.
 
-contra-ethos-games is the Rust + WebGPU rebuild of two small merge games, **Dice Merge** and **Blob Merge**. They'll be published on contra-ethos.com. Later they'll share one custom UI, also built in Rust and WebGPU. The falling-sand game, [Phosphor-Sand](https://github.com/Ethan23p/Phosphor-Sand), joins this platform later as a separate effort. It's plain JS + WGSL today and is served at sand.contra-ethos.com. The work happens across many sessions, so `PLAN.md` is the coordination point. Each session picks up the next open step there and leaves the plan accurate.
+contra-ethos-games is the Rust + WebGPU rebuild of two small merge games, **Dice Merge** and **Blob Merge**. They'll be published on contra-ethos.com. Later they'll share one custom UI, also built in Rust and WebGPU. The falling-sand game, [Phosphor-Sand](https://github.com/Ethan23p/Phosphor-Sand), joins this platform later as a separate effort. It's plain JS + WGSL today and is served at sand.contra-ethos.com. The work happens across many sessions, so the contra-ethos games doc is the coordination point. Each session picks up the next open step there and leaves the doc accurate.
 
 ## Sources of truth
 
-1. **The abstract specifications define what the games are.** They're Claude Docs; read them with the docs connector:
-   - Dice: https://claude.ai/artifact/Nc16s8DQxjU3PZMAAyTLrx
-   - Blob: https://claude.ai/artifact/KNAFDfw4TWWauZNejsusDe
+1. **The contra-ethos games doc is the authority.** It's a Claude Doc, read and written with the docs connector: https://claude.ai/artifact/14yr839S14jSc65zf1gvRj. Its tabs are Overview, Inbox, Dice Merge spec and Blob Merge spec. It outranks `PLAN.md`. Ethan drops new content in the Inbox; move it into the specs or the plan, then clear it.
 
-   If code and spec disagree, the spec wins. If the spec is silent or ambiguous, ask Ethan (the user), then update the spec, not just the code. Each spec ends with open questions; don't settle those in code alone.
-2. **`PLAN.md` holds the phases, the current step, and the decision log.**
+   The specs define what the games are. Every change Ethan greenlights goes into the spec in the same turn as the code. If code and spec disagree, the spec wins. If the spec is silent or ambiguous, ask Ethan (the user), then update the spec, not just the code. Each spec ends with open questions; don't settle those in code alone.
+2. **`PLAN.md` holds the engineering history:** the ticked steps, the architecture, and the fine-grained decision log. Where it disagrees with the doc, the doc wins.
 3. **The old JS/TS builds are reference for feel, not for rules.**
    - [Blob-Merge-Game](https://github.com/Ethan23p/Blob-Merge-Game) is React + Canvas, with an in-game config list and top bar.
    - [Dice-Merge-Testbed](https://github.com/Ethan23p/Dice-Merge-Testbed) is checked out at `../Dice-Game`. Its newest work (the main menu, game modes, the Tuning panel and the Sonar merge effect) is on the `claude/merge-pulse-train` branch, not on `main`.
@@ -61,7 +59,7 @@ The workspace layout and the reasoning behind it are in `PLAN.md` (Architecture)
 
 ## Session protocol
 
-1. Read `PLAN.md`. Find the first unchecked step of the current phase.
+1. Read the doc's Overview and Inbox, then `PLAN.md`. Find the first open item under Next.
 2. Re-read the spec sections that step touches.
 3. Work in small, verified increments: tests for logic, screenshots for visuals.
 4. Before ending: tick finished steps in `PLAN.md`, add any decision to the decision log with its date and reason, and note what the next session should do first.

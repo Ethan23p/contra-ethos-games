@@ -80,6 +80,10 @@ impl Panel {
 
     pub fn show<A: App>(&mut self, ctx: &Context, app: &mut A) {
         self.zones.clear();
+        if !app.overlay() {
+            self.open = false;
+            return;
+        }
         if app.config().is_none() {
             return;
         }

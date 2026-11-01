@@ -1,5 +1,7 @@
 # Implementation plan
 
+**The [contra-ethos games doc](https://claude.ai/artifact/14yr839S14jSc65zf1gvRj) is the authority over this file:** the current plan, Next and the specs live there. This file keeps the engineering history.
+
 The living plan for rebuilding Dice Merge and Blob Merge in Rust + WebGPU and publishing them on contra-ethos.com. Tick steps as they land, and log decisions at the bottom.
 
 **Current phase: 5, Shared UI (later sessions).** Phases 0 to 4 are done: both games are playable end to end at play.contra-ethos.com, keep their progress, and have an in-game menu. Next: Ethan's phone pass on the overflow warning, saved games and the menu.
@@ -88,6 +90,7 @@ The discrete game comes first: it's the cheapest way to prove the spec → code 
 - [x] Persistent state: a game in progress survives reloads and leaving the site (`Game::to_save`, `Game::from_save`, in localStorage). Dice saves on every action, Blob every half second.
 - [x] In-game menu with New game two taps away, separate from the config panel, pausing the game while open (`engine::Menu`). Ships with persistent state, since a saved game needs a way out.
 - [x] Both games reachable from the contra-ethos.com home page, through their project pages' Play links; they stay at play.contra-ethos.com.
+- [x] Dev mode: a switch in the in-game menu that shows or hides the config overlay (`Menu::dev`, `App::overlay`).
 
 ### 5. Shared UI (later sessions)
 - [ ] Design pass: menus, settings, tuning, game switching, one visual language.
@@ -147,3 +150,5 @@ None right now.
 | 2026-10-31 | The config panel stays in the published builds for now. | Ethan still tunes on the deployed build; gating it out waits for Phase 5's player UI. This supersedes the 2026-10-22 plan to gate it in Phase 4. |
 | 2026-10-31 | Saves are hand-written text, versioned by their first word (`dice1`, `blob1`), not serde. | No new dependency for a few short formats. A save that doesn't parse or fit the rules starts a new game. |
 | 2026-10-31 | Blob saves drop merges in progress; their blobs are still touching and merge again on restore. | Keeps the format small, and a half-finished merge is the only thing lost. |
+| 2026-10-31 | Dev mode is off by default, remembered per device under one key, so it carries between games. The sandbox has no menu, so its overlay always shows. | Players get a clean game, and Ethan flips it once per device. |
+| 2026-10-31 | The contra-ethos games doc is the authority over this file and holds the specs; the old standalone spec docs point to it. | Ethan's call, matching the website's doc. |
