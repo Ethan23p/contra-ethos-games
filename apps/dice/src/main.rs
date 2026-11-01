@@ -100,8 +100,16 @@ impl DiceApp {
         if let Some(game) = saved {
             self.game = game;
             self.player = Player::new(self.game.board().clone());
+            self.fit_slots();
         }
         self
+    }
+
+    /// Gives each slot its animation state: the opening has fewer of them.
+    fn fit_slots(&mut self) {
+        let n = self.game.slots().len();
+        self.turns.resize_with(n, || Turn { from: 0.0, start: 0.0, secs: 0.0 });
+        self.entered.resize(n, self.time);
     }
 
     fn save(&self) {
@@ -180,6 +188,7 @@ impl DiceApp {
                 })
                 .collect();
             let turn = self.game.place(slot, grab, at).expect("checked legal");
+            self.fit_slots();
             for step in &turn.steps {
                 if let Step::Spawn { index, .. } | Step::Replace { index, .. } = step {
                     self.entered[*index] = self.time;

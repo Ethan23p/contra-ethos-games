@@ -44,6 +44,9 @@ pub struct Rules {
     pub temperature: f64,
     /// Spawn distribution: the highest value spawned.
     pub max_value: u32,
+    /// Spawn distribution: the share of clusters whose values start from the
+    /// board's average instead of from 1.
+    pub mature: f64,
     /// Spawn distribution, variety: no value repeats within a cluster.
     pub no_repeat: bool,
     /// Spawn distribution, variety: a 3-cell cluster holds exactly one pair.
@@ -67,6 +70,7 @@ impl Default for Rules {
             size_weights: [40.0, 35.0, 25.0],
             temperature: 2.0,
             max_value: 8,
+            mature: 0.2,
             no_repeat: true,
             one_pair: true,
             slots: 2,

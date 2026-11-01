@@ -67,7 +67,7 @@ enum Flash {
         combo: u32,
     },
     /// A blob below the pool shrinks away.
-    Purge {
+    Exclude {
         at: Vec2,
         group: u8,
         value: u32,
@@ -88,7 +88,7 @@ impl Flash {
     fn life(&self) -> f32 {
         match self {
             Flash::Pop { .. } => 0.8,
-            Flash::Purge { .. } => 0.5,
+            Flash::Exclude { .. } => 0.5,
             Flash::Nova { .. } => 1.6,
             Flash::Ring { .. } => 0.45,
         }
@@ -249,10 +249,10 @@ impl App for BlobApp {
                     Flash::Ring { at, color, size: r * (1.0 + 0.25 * count as f32) }
                 }
                 Event::Scored { points, combo, at, .. } => Flash::Pop { at, points, combo },
-                Event::Purged { group, value, at, .. } => {
+                Event::Excluded { group, value, at, .. } => {
                     let color = look::grey(look::blob_color(group, value), 0.6);
                     self.drops.burst(&mut self.fx, at, r * 0.7, 5, (25.0, 70.0), (0.12, 0.2), color, self.time, 0.6);
-                    Flash::Purge { at, group, value }
+                    Flash::Exclude { at, group, value }
                 }
                 Event::Nova { at, bonus, .. } => {
                     self.drops.burst(
@@ -267,7 +267,7 @@ impl App for BlobApp {
                         0.8,
                     );
                     // The new seed grows in, outward from the last blob.
-                    for b in &self.game.field.blobs {
+                    for b in self.game.field.blobs.iter().filter(|b| !self.prev.contains_key(&b.id)) {
                         let delay = 0.15 + b.pos.distance(at) / 900.0;
                         self.born.insert(b.id, (Birth::Spawn { delay }, self.time));
                     }
@@ -350,7 +350,7 @@ impl App for BlobApp {
                     let shine = look::shine();
                     s.circle(at, drawn * (1.0 + 1.6 * f), [shine[0], shine[1], shine[2], 0.8 * (1.0 - f)]).soft(drawn);
                 }
-                Flash::Purge { at, group, value } => {
+                Flash::Exclude { at, group, value } => {
                     // Deflates as it greys out.
                     let color = look::grey(look::blob_color(group, value), k);
                     let size = drawn * (1.0 - k * k).max(0.0);

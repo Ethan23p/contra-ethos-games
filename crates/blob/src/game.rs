@@ -1,7 +1,9 @@
 //! The game on top of the field: the launcher's queue and the pool it draws
-//! from, Purge, scoring and the combo, nova, and the ending.
+//! from, Exclude, scoring and the combo, nova, and the ending.
 
 use std::fmt::Write;
+
+use glam::Vec2;
 
 use crate::field::take;
 use crate::{Event, Field, GROUPS, Physics, Rng};
@@ -14,9 +16,17 @@ pub struct Rules {
     pub ceiling: u32,
     /// How many values the pool holds at first.
     pub window: usize,
-    /// The pool widens by one value per this many doublings of the peak past
-    /// the ceiling's minimum.
-    pub widen_every: u32,
+    /// Whether blobs below the pool are excluded from the field. Off, a low
+    /// value stays in the pool until its last blob leaves the field.
+    pub exclude: bool,
+    /// Difficulty rises each time the record peak doubles this many times.
+    pub interval: u32,
+    /// How likely a rise is to add a group, against the other levers.
+    pub group_lever: f64,
+    /// How likely a rise is to widen the pool by one value.
+    pub pool_lever: f64,
+    /// Groups never grow past this.
+    pub max_groups: u8,
     /// Draw weight falls by this factor per step above the pool's floor.
     pub falloff: f64,
     /// Queue length, the blob on the launcher included.
@@ -26,8 +36,10 @@ pub struct Rules {
     pub combo_launches: usize,
     /// Points for a nova.
     pub nova_bonus: u64,
-    /// How many blobs a nova seeds.
+    /// How many blobs a nova seeds, per group in play.
     pub nova_blobs: usize,
+    /// Whether a nova takes one blob left of a group, or of the whole field.
+    pub group_nova: bool,
     /// The game ends when a blob stays outside the rim this long (s).
     pub grace: f32,
 }
@@ -37,12 +49,17 @@ impl Default for Rules {
         Self {
             ceiling: 8,
             window: 3,
-            widen_every: 3,
+            exclude: true,
+            interval: 2,
+            group_lever: 1.0,
+            pool_lever: 1.0,
+            max_groups: GROUPS,
             falloff: 1.25,
             queue: 2,
             combo_launches: 3,
             nova_bonus: 2000,
-            nova_blobs: 12,
+            nova_blobs: 4,
+            group_nova: true,
             grace: 6.5,
         }
     }
@@ -50,13 +67,11 @@ impl Default for Rules {
 
 impl Rules {
     /// Pool window: the values the launcher may draw, lowest first. Ceiling =
-    /// max(8, peak ÷ 2); 3 + floor((log₂ peak − 3) ÷ 3) consecutive values
-    /// counting down from it, never below 2. Below a peak of 8 the window
-    /// stays at 3 rather than narrowing.
-    pub fn pool(&self, peak: u32) -> Vec<u32> {
+    /// max(8, peak ÷ 2); `window` + `widened` consecutive values counting down
+    /// from it, never below 2.
+    pub fn pool(&self, peak: u32, widened: u32) -> Vec<u32> {
         let ceiling = self.ceiling.max(2).max(peak / 2).ilog2();
-        let past = peak.max(1).ilog2().saturating_sub(self.ceiling.max(1).ilog2());
-        let count = (self.window.max(1) + (past / self.widen_every.max(1)) as usize).min(ceiling as usize);
+        let count = (self.window.max(1) + widened as usize).min(ceiling as usize);
         (ceiling + 1 - count as u32..=ceiling).map(|k| 1 << k).collect()
     }
 }
@@ -67,6 +82,21 @@ pub struct Game {
     pub rules: Rules,
     /// The launcher's queue of (group, value), the head on the launcher.
     pub queue: Vec<(u8, u32)>,
+    /// Entries due next, ahead of the draw: the opening, and groups on their
+    /// way in. A value of 0 is drawn when its turn comes.
+    pub script: Vec<(u8, u32)>,
+    /// Groups in play, the first this many. A new one counts from its first
+    /// launch, so it reaches the field through the launcher.
+    pub groups: u8,
+    /// Values the pool has gained from difficulty.
+    pub widened: u32,
+    /// log₂ of the highest peak so far.
+    pub record: u32,
+    /// Doublings of the record since difficulty last rose.
+    pub raises: u32,
+    /// Whether a nova may fire: one per launch, so a seed that merges down
+    /// can't set off the next.
+    pub charged: bool,
     pub score: u64,
     pub combo: u32,
     /// Combo credit per launch window, oldest first, the current one last.
@@ -80,15 +110,30 @@ pub struct Game {
 }
 
 impl Game {
-    /// A fresh game: Seed, then fill the queue from the pool.
+    /// A fresh game, opening on one group: two launches teach a merge and a
+    /// nova, and the next brings in a second group. For a merge size m, that's
+    /// m − 1 2s, m − 2 4s and m − 1 8s on the field: a launched 2 makes the 4s
+    /// up to m − 1, a launched 4 makes an 8, and the 8s merge down to one blob.
     pub fn new(p: &Physics, rules: Rules, seed: u64) -> Self {
         let mut rng = Rng::new(seed);
         let mut field = Field::new();
-        field.seed(p, &mut rng);
+        let m = p.m.max(2);
+        let mut values = [(2, m - 1), (4, m - 2), (8, m - 1)].into_iter().flat_map(|(v, n)| vec![v; n]);
+        field.scatter(p, &mut rng, Vec2::ZERO, 3 * m - 4, 1, |_| values.next().unwrap());
+        let mut script = vec![(0, 2), (0, 4)];
+        if rules.max_groups > 1 {
+            script.push((1, 0));
+        }
         let mut game = Self {
             field,
             rules,
             queue: Vec::new(),
+            script,
+            groups: 1,
+            widened: 0,
+            record: 3,
+            raises: 0,
+            charged: true,
             score: 0,
             combo: 1,
             windows: vec![0],
@@ -107,7 +152,9 @@ impl Game {
         if self.over {
             return String::new();
         }
-        let mut s = format!("blob1 {} {} {}", self.score, self.combo, self.rng.state());
+        let mut s = format!("blob2 {} {} {}", self.score, self.combo, self.rng.state());
+        let charged = self.charged as u8;
+        write!(s, " {} {} {} {} {charged}", self.groups, self.widened, self.record, self.raises).unwrap();
         self.field.save(&mut s);
         write!(s, " {}", self.windows.len()).unwrap();
         for w in &self.windows {
@@ -121,16 +168,22 @@ impl Game {
         for (id, t) in &self.outside {
             write!(s, " {id} {t}").unwrap();
         }
+        write!(s, " {}", self.script.len()).unwrap();
+        for (g, v) in &self.script {
+            write!(s, " {g} {v}").unwrap();
+        }
         s
     }
 
     /// A game from [`Game::to_save`], or `None` if the text isn't one.
     pub fn from_save(rules: Rules, text: &str) -> Option<Self> {
         let t = &mut text.split_ascii_whitespace();
-        if t.next()? != "blob1" {
+        if t.next()? != "blob2" {
             return None;
         }
         let (score, combo, rng) = (take(t)?, take(t)?, Rng::new(take(t)?));
+        let (groups, widened, record, raises) = (take(t)?, take(t)?, take(t)?, take(t)?);
+        let charged = take::<u8>(t)? != 0;
         let field = Field::load(t)?;
         let mut windows = Vec::new();
         for _ in 0..take::<usize>(t)? {
@@ -144,11 +197,32 @@ impl Game {
         for _ in 0..take::<usize>(t)? {
             outside.push((take(t)?, take(t)?));
         }
+        let mut script = Vec::new();
+        for _ in 0..take::<usize>(t)? {
+            script.push((take(t)?, take(t)?));
+        }
         if field.blobs.is_empty() || windows.is_empty() {
             return None;
         }
         let events = Vec::new();
-        let mut game = Self { field, rules, queue, score, combo, windows, outside, over: false, rng, events };
+        let mut game = Self {
+            field,
+            rules,
+            queue,
+            script,
+            groups,
+            widened,
+            record,
+            raises,
+            charged,
+            score,
+            combo,
+            windows,
+            outside,
+            over: false,
+            rng,
+            events,
+        };
         game.refill();
         Some(game)
     }
@@ -165,8 +239,19 @@ impl Game {
         self.field.blobs.iter().map(|b| b.value).max().unwrap_or(1)
     }
 
+    /// The pool's window, and with Exclude off, any lower values still on the
+    /// field.
     pub fn pool(&self) -> Vec<u32> {
-        self.rules.pool(self.peak())
+        let mut pool = self.rules.pool(self.peak(), self.widened);
+        if !self.rules.exclude {
+            let floor = pool[0];
+            let mut low: Vec<u32> = self.field.blobs.iter().map(|b| b.value).filter(|&v| v < floor).collect();
+            low.sort_unstable();
+            low.dedup();
+            low.extend(pool);
+            pool = low;
+        }
+        pool
     }
 
     /// Draw: a uniform group, and a value from the pool weighted
@@ -187,8 +272,12 @@ impl Game {
         }
         self.queue.truncate(self.rules.queue.max(1));
         while self.queue.len() < self.rules.queue.max(1) {
-            let group = self.rng.below(GROUPS as usize) as u8;
-            let value = self.draw(&pool);
+            let (group, value) = if self.script.is_empty() {
+                (self.rng.below(self.groups.max(1) as usize) as u8, 0)
+            } else {
+                self.script.remove(0)
+            };
+            let value = if value == 0 { self.draw(&pool) } else { value };
             self.queue.push((group, value));
         }
     }
@@ -200,6 +289,8 @@ impl Game {
             return None;
         }
         let (group, value) = self.queue.remove(0);
+        self.groups = self.groups.max(group + 1);
+        self.charged = true;
         let id = self.field.launch(p, angle, group, value);
         self.windows.push(0);
         let excess = self.windows.len().saturating_sub(self.rules.combo_launches.max(1));
@@ -209,7 +300,7 @@ impl Game {
         Some(id)
     }
 
-    /// Move → Merge → Purge, then scoring, nova and the ending. Once over,
+    /// Move → Merge → Exclude, then scoring, nova and the ending. Once over,
     /// the field still moves but the rules stop.
     pub fn step(&mut self, p: &Physics, dt: f32) {
         self.field.step(p, dt);
@@ -219,9 +310,17 @@ impl Game {
             return;
         }
         self.score(&events);
+        let merged: Vec<u8> = events
+            .iter()
+            .filter_map(|e| match e {
+                &Event::Merged { blob, .. } => self.field.blob(blob).map(|b| b.group),
+                _ => None,
+            })
+            .collect();
         self.events.extend(events);
-        self.purge();
-        self.nova(p);
+        self.exclude();
+        self.difficulty();
+        self.nova(p, &merged);
         self.refill();
         self.watch_rim(p, dt);
     }
@@ -242,9 +341,12 @@ impl Game {
         }
     }
 
-    /// Purge: blobs whose value has fallen below the pool leave the field.
+    /// Exclude: blobs whose value has fallen out of the pool leave the field.
     /// Blobs merging or about to finish that first.
-    fn purge(&mut self) {
+    fn exclude(&mut self) {
+        if !self.rules.exclude {
+            return;
+        }
         let floor = self.pool()[0];
         let held: Vec<u32> = self.field.pending.iter().flat_map(|h| h.members.iter().copied()).collect();
         let gone: Vec<u32> = self
@@ -256,31 +358,72 @@ impl Game {
             .collect();
         for id in gone {
             if let Some(b) = self.field.remove(id) {
-                self.events.push(Event::Purged { blob: b.id, group: b.group, value: b.value, at: b.pos });
+                self.events.push(Event::Excluded { blob: b.id, group: b.group, value: b.value, at: b.pos });
             }
         }
     }
 
-    /// Nova: when one blob remains, +bonus, and Seed replaces it with blobs
-    /// of its value or half of it. A field emptied outright reseeds as a new
-    /// game would.
-    fn nova(&mut self, p: &Physics) {
-        let f = &self.field;
-        if f.blobs.len() > 1 || !f.merges.is_empty() || !f.pending.is_empty() {
+    /// Difficulty: each `interval` doublings of the record peak, one lever,
+    /// chosen at random by weight from those with room left.
+    fn difficulty(&mut self) {
+        let level = self.peak().ilog2();
+        // A nova's seed merging down earned nothing.
+        if !self.charged {
+            self.record = self.record.max(level);
+        }
+        while self.record < level {
+            self.record += 1;
+            self.raises += 1;
+            if self.raises >= self.rules.interval.max(1) {
+                self.raises = 0;
+                self.rise();
+            }
+        }
+    }
+
+    fn rise(&mut self) {
+        let (r, peak) = (&self.rules, self.peak());
+        let next = self.script.iter().chain(&self.queue).map(|e| e.0 + 1).fold(self.groups, u8::max);
+        let group = if next < r.max_groups { r.group_lever } else { 0.0 };
+        let wider = r.pool(peak, self.widened + 1).len() > r.pool(peak, self.widened).len();
+        let pool = if wider { r.pool_lever } else { 0.0 };
+        if group + pool <= 0.0 {
             return;
         }
-        let Some(last) = f.blobs.first().map(|b| b.id) else {
-            self.field.seed(p, &mut self.rng);
+        match self.rng.weighted(&[group, pool]) {
+            0 => self.script.push((next, 0)),
+            _ => self.widened += 1,
+        }
+    }
+
+    /// Nova: when a merge leaves one blob of its group, +bonus, and Seed
+    /// replaces it with blobs of its value or half of it, in the groups in
+    /// play. A group's first blob has merged with nothing, so it's safe. One
+    /// nova per launch. A field emptied outright reseeds as a new game would.
+    fn nova(&mut self, p: &Physics, merged: &[u8]) {
+        let f = &self.field;
+        if f.blobs.is_empty() {
+            self.field.seed(p, &mut self.rng, self.groups);
             return;
-        };
+        }
+        if !self.charged {
+            return;
+        }
+        let group_nova = self.rules.group_nova;
+        let lone = merged.iter().find_map(|&g| {
+            let mut of = f.blobs.iter().filter(|b| !group_nova || b.group == g);
+            let first = of.next()?;
+            of.next().is_none().then_some(first.id)
+        });
+        let Some(last) = lone else { return };
         let b = self.field.remove(last).unwrap();
         self.score += self.rules.nova_bonus;
-        self.field.centre = b.pos;
+        self.charged = false;
         let value = b.value;
-        self.field.scatter(p, &mut self.rng, self.rules.nova_blobs, |rng| {
+        let count = self.rules.nova_blobs * self.groups as usize;
+        self.field.scatter(p, &mut self.rng, b.pos, count, self.groups, |rng| {
             if rng.below(2) == 0 { value } else { (value / 2).max(2) }
         });
-        self.outside.clear();
         self.events.push(Event::Nova { value, at: b.pos, bonus: self.rules.nova_bonus });
     }
 

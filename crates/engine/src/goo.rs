@@ -28,14 +28,7 @@ pub struct Goo {
 
 impl Default for Goo {
     fn default() -> Self {
-        Self {
-            fill: [1.0; 4],
-            blend: 0.0,
-            link_radius: 0.0,
-            sheen_at: 0.0,
-            sheen: 0.0,
-            sheen_color: [1.0; 4],
-        }
+        Self { fill: [1.0; 4], blend: 0.0, link_radius: 0.0, sheen_at: 0.0, sheen: 0.0, sheen_color: [1.0; 4] }
     }
 }
 

@@ -102,7 +102,7 @@ fn motion_same_seed_same_field() {
     let p = Physics::default();
     let make = || {
         let mut f = Field::new();
-        f.seed(&p, &mut Rng::new(42));
+        f.seed(&p, &mut Rng::new(42), GROUPS);
         f.launch(&p, 1.0, 0, 2);
         run(&mut f, &p, 2.0);
         f
@@ -312,7 +312,7 @@ fn seeding_opens_with_10_to_13_blobs_of_values_2_to_8() {
     let p = Physics::default();
     for seed in 0..20 {
         let mut f = Field::new();
-        f.seed(&p, &mut Rng::new(seed));
+        f.seed(&p, &mut Rng::new(seed), GROUPS);
         assert!((10..=13).contains(&f.blobs.len()));
         assert!(f.blobs.iter().all(|b| [2, 4, 8].contains(&b.value) && b.group < GROUPS));
     }
@@ -322,7 +322,7 @@ fn seeding_opens_with_10_to_13_blobs_of_values_2_to_8() {
 fn seeding_no_two_blobs_start_overlapping() {
     let p = Physics::default();
     let mut f = Field::new();
-    f.seed(&p, &mut Rng::new(3));
+    f.seed(&p, &mut Rng::new(3), GROUPS);
     for a in &f.blobs {
         for b in &f.blobs {
             if a.id != b.id {
@@ -468,17 +468,26 @@ fn merging_a_merged_blob_waits_the_chain_delay_before_merging_again() {
     assert!(began - made >= 0.4 - DT, "{made} → {began}");
 }
 
-// The game: pool window, draw, scoring, purge, nova, ending.
+// The game: pool window, draw, scoring, exclude, nova, ending.
 
 /// A game on a hand-built field, with the queue filled for its peak.
 fn game(p: &Physics, blobs: &[(u8, u32, Vec2)]) -> Game {
-    let mut g = Game::new(p, Rules::default(), 1);
-    g.field = Field::new();
+    let mut g = past_opening(p, Rules::default(), 1);
     for &(group, value, pos) in blobs {
         g.field.add(group, value, pos);
     }
-    g.queue.clear();
     g.step(p, DT);
+    g
+}
+
+/// A game with an empty field, its opening over, three groups in play and
+/// difficulty held still.
+fn past_opening(p: &Physics, rules: Rules, seed: u64) -> Game {
+    let mut g = Game::new(p, rules, seed);
+    g.field = Field::new();
+    g.script.clear();
+    g.queue.clear();
+    (g.groups, g.record) = (3, 31);
     g
 }
 
@@ -499,38 +508,40 @@ fn bystanders() -> Vec<(u8, u32, Vec2)> {
 #[test]
 fn pool_window_opens_at_8_4_2() {
     let r = Rules::default();
-    assert_eq!(r.pool(8), vec![2, 4, 8]);
+    assert_eq!(r.pool(8, 0), vec![2, 4, 8]);
     // Below a peak of 8 the ceiling holds at 8 and the window at 3.
-    assert_eq!(r.pool(1), vec![2, 4, 8]);
-    assert_eq!(r.pool(16), vec![2, 4, 8]);
+    assert_eq!(r.pool(1, 0), vec![2, 4, 8]);
+    assert_eq!(r.pool(16, 0), vec![2, 4, 8]);
 }
 
 #[test]
 fn pool_window_slides_up_with_the_ceiling_at_half_the_peak() {
-    let r = Rules { widen_every: 99, ..Rules::default() };
-    assert_eq!(r.pool(32), vec![4, 8, 16]);
-    assert_eq!(r.pool(256), vec![32, 64, 128]);
+    let r = Rules::default();
+    assert_eq!(r.pool(32, 0), vec![4, 8, 16]);
+    assert_eq!(r.pool(256, 0), vec![32, 64, 128]);
 }
 
 #[test]
-fn pool_window_widens_by_one_every_three_doublings() {
+fn pool_window_widening_adds_values_below() {
     let r = Rules::default();
-    assert_eq!(r.pool(32).len(), 3);
-    assert_eq!(r.pool(64), vec![4, 8, 16, 32]);
-    assert_eq!(r.pool(512), vec![16, 32, 64, 128, 256]);
+    assert_eq!(r.pool(64, 1), vec![4, 8, 16, 32]);
+    assert_eq!(r.pool(512, 2), vec![16, 32, 64, 128, 256]);
 }
 
 #[test]
 fn pool_window_never_goes_below_2() {
     let r = Rules { ceiling: 4, window: 5, ..Rules::default() };
-    assert_eq!(r.pool(4), vec![2, 4]);
-    assert_eq!(Rules { ceiling: 1, ..r }.pool(1), vec![2]);
+    assert_eq!(r.pool(4, 0), vec![2, 4]);
+    assert_eq!(Rules { ceiling: 1, ..r }.pool(1, 0), vec![2]);
 }
 
 #[test]
 fn draw_values_come_from_the_pool_favouring_low_values() {
     let p = Physics::default();
-    let g = Game::new(&p, Rules { queue: 30_000, ..Rules::default() }, 3);
+    let mut g = past_opening(&p, Rules { queue: 30_000, ..Rules::default() }, 3);
+    g.field.add(0, 8, Vec2::ZERO);
+    g.field.add(1, 8, Vec2::new(0.0, 100.0));
+    g.step(&p, DT);
     let pool = g.pool();
     let counts: Vec<usize> = pool.iter().map(|&v| g.queue.iter().filter(|e| e.1 == v).count()).collect();
     assert_eq!(counts.iter().sum::<usize>(), g.queue.len(), "every value from {pool:?}");
@@ -543,17 +554,21 @@ fn draw_values_come_from_the_pool_favouring_low_values() {
 #[test]
 fn draw_groups_are_uniform() {
     let p = Physics::default();
-    let g = Game::new(&p, Rules { queue: 30_000, ..Rules::default() }, 4);
-    for group in 0..GROUPS {
+    let mut g = past_opening(&p, Rules { queue: 30_000, ..Rules::default() }, 4);
+    g.field.add(0, 8, Vec2::ZERO);
+    g.field.add(1, 8, Vec2::new(0.0, 100.0));
+    g.step(&p, DT);
+    for group in 0..3 {
         let share = g.queue.iter().filter(|e| e.0 == group).count() as f64 / g.queue.len() as f64;
-        assert!((share - 1.0 / GROUPS as f64).abs() < 0.02, "group {group}: {share}");
+        assert!((share - 1.0 / 3.0).abs() < 0.02, "group {group}: {share}");
     }
+    assert!(g.queue.iter().all(|e| e.0 < 3), "only groups in play");
 }
 
 #[test]
 fn draw_the_queue_holds_2_and_launching_moves_it_up() {
     let p = Physics::default();
-    let mut g = Game::new(&p, Rules::default(), 5);
+    let mut g = game(&p, &bystanders());
     assert_eq!(g.queue.len(), 2);
     let (head, next) = (g.queue[0], g.queue[1]);
     let id = g.launch(&p, 0.0).unwrap();
@@ -572,7 +587,7 @@ fn draw_queued_values_the_pool_no_longer_allows_are_rerolled() {
     g.queue = vec![(1, 2), (2, 16)];
     g.step(&p, DT);
     let pool = g.pool();
-    assert_eq!(pool, vec![8, 16, 32, 64]);
+    assert_eq!(pool, vec![16, 32, 64]);
     assert_eq!(g.queue[1], (2, 16), "allowed entries stay");
     assert_eq!(g.queue[0].0, 1, "a re-roll keeps the group");
     assert!(pool.contains(&g.queue[0].1));
@@ -643,45 +658,228 @@ fn scoring_the_combo_counts_merges_over_the_last_3_launches() {
 }
 
 #[test]
-fn purge_blobs_below_the_pool_leave_the_field() {
+fn exclude_blobs_below_the_pool_leave_the_field() {
     let p = calm();
     let mut blobs = bystanders();
     blobs.push((0, 128, Vec2::new(0.0, 150.0)));
     let g = game(&p, &blobs);
-    // The pool is 8–64: the 2 and the 4 go, the 8 stays.
-    assert_eq!(values(&g.field), vec![8, 128]);
+    // The pool is 16–64: the 2, the 4 and the 8 go.
+    assert_eq!(values(&g.field), vec![128]);
 }
 
 #[test]
-fn purge_a_merging_blob_finishes_its_merge_first() {
+fn exclude_a_merging_blob_finishes_its_merge_first() {
     let p = calm();
     let mut blobs = bystanders();
     blobs.push((0, 128, Vec2::new(0.0, 150.0)));
     let mut g = game(&p, &blobs);
-    trio(&mut g, 4, 0.0);
-    // Below the floor, but they touch at once: the merge makes an 8, which stays.
+    g.field.add(1, 64, Vec2::new(0.0, -300.0));
+    trio(&mut g, 8, 0.0);
+    // Below the floor, but they touch at once: the merge makes a 16, which stays.
     play(&mut g, &p, 1.0);
-    assert_eq!(values(&g.field), vec![8, 8, 128]);
+    assert_eq!(values(&g.field), vec![16, 64, 128]);
 }
 
 #[test]
-fn nova_one_blob_remaining_scores_2000_and_seeds_12_of_its_value_or_half() {
+fn nova_a_merge_leaving_one_blob_scores_2000_and_seeds_12_of_its_value_or_half() {
     let p = calm();
-    let mut g = game(&p, &[(0, 16, Vec2::new(30.0, 0.0))]);
-    let events = g.take_events();
+    let mut g = game(&p, &[(0, 8, Vec2::new(-40.0, 0.0)), (0, 8, Vec2::ZERO), (0, 8, Vec2::new(40.0, 0.0))]);
+    let mut events = Vec::new();
+    while !events.iter().any(|e| matches!(e, Event::Nova { .. })) {
+        g.step(&p, DT);
+        events.extend(g.take_events());
+    }
     assert!(events.iter().any(|e| matches!(e, Event::Nova { value: 16, bonus: 2000, .. })));
-    assert_eq!(g.score, 2000);
+    assert_eq!(g.score, 48 + 2000);
     assert_eq!(g.field.blobs.len(), 12);
     assert!(g.field.blobs.iter().all(|b| b.value == 16 || b.value == 8));
 }
 
+/// Three of group 0 about to merge, and blobs of other groups far off.
+fn trio_among_others(p: &Physics) -> Game {
+    let mut blobs = bystanders();
+    blobs.retain(|b| b.0 != 0);
+    blobs.extend([(0, 8, Vec2::new(-40.0, 0.0)), (0, 8, Vec2::ZERO), (0, 8, Vec2::new(40.0, 0.0))]);
+    game(p, &blobs)
+}
+
 #[test]
-fn nova_follows_a_merge_that_leaves_one_blob() {
+fn nova_takes_the_last_blob_of_a_group_whatever_else_is_on_the_field() {
     let p = calm();
-    let mut g = game(&p, &[(0, 8, Vec2::new(-40.0, 0.0)), (0, 8, Vec2::ZERO), (0, 8, Vec2::new(40.0, 0.0))]);
+    let mut g = trio_among_others(&p);
     let events = play(&mut g, &p, 1.0);
     assert!(events.iter().any(|e| matches!(e, Event::Nova { value: 16, .. })));
-    assert_eq!(g.score, 48 + 2000);
+}
+
+#[test]
+fn nova_can_wait_for_the_whole_field_instead() {
+    let p = calm();
+    let mut g = trio_among_others(&p);
+    g.rules.group_nova = false;
+    let events = play(&mut g, &p, 1.0);
+    assert!(!events.iter().any(|e| matches!(e, Event::Nova { .. })));
+}
+
+#[test]
+fn nova_a_groups_first_blob_is_safe_until_it_merges() {
+    let p = calm();
+    let mut g = game(&p, &bystanders());
+    g.script = vec![(3, 2)];
+    g.queue.clear();
+    g.step(&p, DT);
+    let id = g.launch(&p, 0.0).unwrap();
+    assert_eq!(g.groups, 4);
+    let events = play(&mut g, &p, 2.0);
+    assert!(g.field.blob(id).is_some(), "alone of its group, and still here");
+    assert!(!events.iter().any(|e| matches!(e, Event::Nova { .. })));
+}
+
+#[test]
+fn nova_seeds_only_groups_in_play_around_the_blobs_already_there() {
+    let p = calm();
+    let mut g = trio_among_others(&p);
+    g.groups = 2;
+    play(&mut g, &p, 1.0);
+    assert!(g.field.blobs.iter().all(|b| b.group < 3));
+    assert_eq!(g.field.blobs.iter().filter(|b| b.group == 2).count(), 1, "only the blob already there");
+}
+
+#[test]
+fn nova_one_per_launch() {
+    let p = calm();
+    let mut g = trio_among_others(&p);
+    g.charged = false;
+    let events = play(&mut g, &p, 1.0);
+    assert!(!events.iter().any(|e| matches!(e, Event::Nova { .. })));
+    g.launch(&p, 0.0);
+    assert!(g.charged);
+}
+
+#[test]
+fn opening_two_launches_teach_a_merge_and_a_nova() {
+    for m in [2, 3] {
+        for seed in 0..6 {
+            let (ring, rim, radius) = (195.0, 120.0, 24.5);
+            let p = Physics { m, ring, rim, radius, sigma: 41.0, well: 2420.0, ..Physics::default() };
+            let mut g = Game::new(&p, Rules::default(), seed);
+            assert_eq!(g.groups, 1);
+            assert!(g.field.blobs.iter().all(|b| b.group == 0));
+            assert_eq!(g.queue, vec![(0, 2), (0, 4)]);
+            let mut events = Vec::new();
+            for at in [0.3, 2.1] {
+                g.launch(&p, at);
+                events.extend(play(&mut g, &p, 6.0));
+            }
+            let novas = events.iter().filter(|e| matches!(e, Event::Nova { value: 16, .. })).count();
+            assert_eq!(novas, 1, "m = {m}, seed {seed}");
+            assert_eq!(g.queue[0].0, 1, "the next launch brings the second group");
+            assert_eq!(g.groups, 1, "which isn't in play until it's launched");
+        }
+    }
+}
+
+#[test]
+fn opening_stays_with_one_group_when_that_is_the_cap() {
+    let p = Physics { m: 2, ..calm() };
+    let mut g = Game::new(&p, Rules { max_groups: 1, ..Rules::default() }, 1);
+    for _ in 0..3 {
+        g.launch(&p, 0.3);
+    }
+    assert!(g.queue.iter().all(|e| e.0 == 0));
+}
+
+#[test]
+fn difficulty_rises_every_interval_doublings_of_the_record() {
+    let p = calm();
+    let mut g = game(&p, &bystanders());
+    (g.record, g.raises) = (3, 0);
+    (g.rules.group_lever, g.rules.pool_lever) = (0.0, 1.0);
+    g.field.add(0, 16, Vec2::new(0.0, 200.0));
+    g.step(&p, DT);
+    assert_eq!((g.record, g.raises, g.widened), (4, 1, 0));
+    g.field.add(0, 32, Vec2::new(0.0, 300.0));
+    g.step(&p, DT);
+    assert_eq!((g.record, g.raises, g.widened), (5, 0, 1));
+}
+
+#[test]
+fn difficulty_ignores_a_nova_seed_merging_down() {
+    let p = calm();
+    let mut g = game(&p, &bystanders());
+    (g.record, g.raises, g.charged) = (3, 0, false);
+    g.field.add(0, 64, Vec2::new(0.0, 200.0));
+    g.step(&p, DT);
+    assert_eq!((g.record, g.raises, g.widened), (6, 0, 0));
+}
+
+#[test]
+fn difficulty_a_big_jump_counts_every_doubling() {
+    let p = calm();
+    let mut g = game(&p, &bystanders());
+    (g.record, g.raises) = (3, 0);
+    (g.rules.group_lever, g.rules.pool_lever) = (0.0, 1.0);
+    g.field.add(0, 128, Vec2::new(0.0, 200.0));
+    g.step(&p, DT);
+    assert_eq!((g.record, g.raises, g.widened), (7, 0, 2));
+}
+
+#[test]
+fn difficulty_a_new_group_arrives_by_the_launcher() {
+    let p = calm();
+    let mut g = game(&p, &bystanders());
+    (g.record, g.raises) = (3, 1);
+    (g.rules.group_lever, g.rules.pool_lever) = (1.0, 0.0);
+    g.field.add(0, 16, Vec2::new(0.0, 200.0));
+    g.step(&p, DT);
+    assert_eq!(g.groups, 3, "not yet");
+    assert_eq!(g.script.len() + g.queue.iter().filter(|e| e.0 == 3).count(), 1);
+    while g.groups == 3 {
+        g.launch(&p, 0.0);
+    }
+    assert_eq!(g.groups, 4);
+}
+
+#[test]
+fn difficulty_the_lever_is_chosen_at_random_by_weight() {
+    let p = calm();
+    let mut counts = [0, 0];
+    for seed in 0..400 {
+        let mut g = past_opening(&p, Rules { interval: 1, max_groups: GROUPS, ..Rules::default() }, seed);
+        g.field.add(0, 64, Vec2::ZERO);
+        g.record = 5;
+        g.step(&p, DT);
+        counts[if g.widened > 0 { 1 } else { 0 }] += 1;
+    }
+    assert!((150..250).contains(&counts[0]), "{counts:?}");
+}
+
+#[test]
+fn difficulty_a_lever_out_of_room_gives_way_to_the_other() {
+    let p = calm();
+    let mut g = game(&p, &bystanders());
+    g.groups = g.rules.max_groups;
+    (g.record, g.raises) = (3, 1);
+    g.rules.pool_lever = 0.001;
+    g.field.add(0, 64, Vec2::new(0.0, 200.0));
+    g.step(&p, DT);
+    assert!(g.widened > 0 && g.script.is_empty());
+}
+
+#[test]
+fn exclude_off_low_values_stay_in_the_pool_until_their_last_blob_leaves() {
+    let p = calm();
+    let mut blobs = bystanders();
+    blobs.push((0, 128, Vec2::new(0.0, 150.0)));
+    let mut g = past_opening(&p, Rules { exclude: false, ..Rules::default() }, 1);
+    for (group, value, pos) in blobs {
+        g.field.add(group, value, pos);
+    }
+    g.step(&p, DT);
+    assert_eq!(values(&g.field), vec![2, 4, 8, 128]);
+    assert_eq!(g.pool(), vec![2, 4, 8, 16, 32, 64]);
+    let low = g.field.blobs.iter().find(|b| b.value == 2).unwrap().id;
+    g.field.remove(low);
+    assert_eq!(g.pool(), vec![4, 8, 16, 32, 64]);
 }
 
 /// A settled field at the centre and one blob well past the rim, which

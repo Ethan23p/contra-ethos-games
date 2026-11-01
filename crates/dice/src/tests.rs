@@ -304,7 +304,7 @@ fn gravity_falls_then_merges_then_falls_again() {
 
 fn spawns(rules: &Rules, n: usize) -> Vec<Cluster> {
     let mut rng = Rng::new(42);
-    (0..n).map(|_| cluster::spawn(rules, &mut rng)).collect()
+    (0..n).map(|_| cluster::spawn(rules, &mut rng, 0)).collect()
 }
 
 #[test]
@@ -395,7 +395,7 @@ fn spawn_distribution_one_pair_overrides_no_repeat() {
 fn supply_restocks_the_placed_slot_and_keeps_the_others() {
     for len in [1, 3, 5] {
         let rules = Rules { slots: len, ..Rules::default() };
-        let mut g = Game::new(rules, 3);
+        let mut g = Game::with_board(rules, 3, Board::new(5));
         assert_eq!(g.slots().len(), len);
         let slot = len / 2;
         let mut rotated = 0;
@@ -560,9 +560,77 @@ fn a_saved_game_resumes_exactly() {
 
 #[test]
 fn a_save_that_does_not_fit_starts_fresh() {
-    let save = Game::new(Rules::default(), 11).to_save();
+    let save = Game::with_board(Rules::default(), 11, Board::new(5)).to_save();
     assert!(Game::from_save(Rules { size: 6, ..Rules::default() }, &save).is_none());
     assert!(Game::from_save(Rules { slots: 3, ..Rules::default() }, &save).is_none());
     assert!(Game::from_save(Rules::default(), "").is_none());
     assert!(Game::from_save(Rules::default(), &save[..save.len() / 2]).is_none());
+}
+
+#[test]
+fn opening_is_connected_1s_and_a_single_1_on_offer() {
+    for (seed, threshold) in (0..60).zip([3, 2, 4, 5].into_iter().cycle()) {
+        let rules = Rules { threshold, ..Rules::default() };
+        let g = Game::new(rules, seed);
+        let dice: Vec<_> = g.board().dice().collect();
+        assert_eq!(dice.len(), threshold - 1);
+        assert!(dice.iter().all(|(_, d)| d.value == 1));
+        assert!(dice.iter().all(|(p, _)| dice.len() == 1 || dice.iter().any(|(q, _)| q.manhattan(*p) == 1)));
+        assert_eq!(g.slots().len(), 1);
+        assert_eq!(g.slot(0).cells, vec![(Pos::new(0, 0), 1)]);
+    }
+}
+
+#[test]
+fn opening_stays_together_under_gravity() {
+    for seed in 0..40 {
+        let g = Game::new(Rules { gravity: Some(Dir::Down), ..Rules::default() }, seed);
+        let dice: Vec<_> = g.board().dice().collect();
+        assert_eq!(dice[0].0.manhattan(dice[1].0), 1);
+        assert!(dice.iter().any(|(p, _)| p.y == 4));
+    }
+}
+
+#[test]
+fn opening_the_first_move_can_merge_and_stocks_every_slot() {
+    for seed in 0..40 {
+        let mut g = Game::new(Rules::default(), seed);
+        let at = g
+            .board()
+            .positions()
+            .find(|&p| g.can_place(0, 0, p) && g.board().dice().filter(|(q, _)| q.manhattan(p) == 1).count() > 0);
+        let turn = g.place(0, 0, at.unwrap()).unwrap();
+        assert!(turn.score > 0.0, "the merge scored");
+        assert_eq!(g.slots().len(), 2);
+        assert_eq!(turn.steps.iter().filter(|s| matches!(s, Step::Spawn { .. })).count(), 2);
+    }
+}
+
+#[test]
+fn opening_survives_a_save_before_its_first_move() {
+    let g = Game::new(Rules::default(), 5);
+    let back = Game::from_save(Rules::default(), &g.to_save()).expect("a save");
+    assert_eq!(back.slots(), g.slots());
+    assert_eq!(back.board(), g.board());
+}
+
+#[test]
+fn spawn_distribution_mature_draws_start_from_the_shift() {
+    let rules = Rules { mature: 1.0, ..Rules::default() };
+    let mut rng = Rng::new(9);
+    let clusters: Vec<_> = (0..4000).map(|_| cluster::spawn(&rules, &mut rng, 2)).collect();
+    let values: Vec<u32> = clusters.iter().flat_map(|c| c.cells.iter().map(|d| d.1)).collect();
+    assert!(values.iter().all(|&v| v >= 3), "nothing below the shift");
+    let count = |v: u32| values.iter().filter(|&&x| x == v).count();
+    assert!(count(3) > count(4) && count(4) > count(5), "the same law, lifted");
+}
+
+#[test]
+fn spawn_distribution_mature_share_is_about_one_in_five() {
+    let mut rng = Rng::new(10);
+    let rules = Rules::default();
+    let n = 20_000;
+    let lifted = (0..n).filter(|_| cluster::spawn(&rules, &mut rng, 4).cells.iter().any(|d| d.1 >= 5)).count();
+    let share = lifted as f64 / n as f64;
+    assert!((share - 0.2).abs() < 0.02, "{share}");
 }

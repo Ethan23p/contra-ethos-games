@@ -91,6 +91,7 @@ The discrete game comes first: it's the cheapest way to prove the spec → code 
 - [x] In-game menu with New game two taps away, separate from the config panel, pausing the game while open (`engine::Menu`). Ships with persistent state, since a saved game needs a way out.
 - [x] Both games reachable from the contra-ethos.com home page, through their project pages' Play links; they stay at play.contra-ethos.com.
 - [x] Dev mode: a switch in the in-game menu that shows or hides the config overlay (`Menu::dev`, `App::overlay`).
+- [x] Openings that teach (`Game::new` in both rules crates), Dice's mature draw (`Rules::mature`), Blob's group novas, difficulty levers and Exclude toggle, and a bot for each game (`--example bot`).
 
 ### 5. Shared UI (later sessions)
 - [ ] Design pass: menus, settings, tuning, game switching, one visual language.
@@ -152,3 +153,5 @@ None right now.
 | 2026-10-31 | Blob saves drop merges in progress; their blobs are still touching and merge again on restore. | Keeps the format small, and a half-finished merge is the only thing lost. |
 | 2026-10-31 | Dev mode is off by default, remembered per device under one key, so it carries between games. The sandbox has no menu, so its overlay always shows. | Players get a clean game, and Ethan flips it once per device. |
 | 2026-10-31 | The contra-ethos games doc is the authority over this file and holds the specs; the old standalone spec docs point to it. | Ethan's call, matching the website's doc. |
+| 2026-11-01 | Blob saves move to `blob2`: games in progress on `blob1` start fresh. Dice stays `dice1`, and accepts one slot for the opening. | Blob's new state (groups, difficulty, the script) has no default worth guessing. |
+| 2026-11-01 | New groups count as in play from their first launch, entering through `Game::script`. | One path for the opening and for difficulty, and seeds can't introduce a colour before the launcher does. |

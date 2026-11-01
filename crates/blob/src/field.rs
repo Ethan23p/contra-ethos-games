@@ -5,7 +5,7 @@ use std::str::SplitAsciiWhitespace;
 
 use glam::Vec2;
 
-use crate::{GROUPS, Physics, Rng};
+use crate::{Physics, Rng};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Blob {
@@ -75,13 +75,14 @@ pub enum Event {
         at: Vec2,
     },
     /// The blob fell below the pool and left the field.
-    Purged {
+    Excluded {
         blob: u32,
         group: u8,
         value: u32,
         at: Vec2,
     },
-    /// One blob remained: it scored `bonus` and became a fresh seed.
+    /// A merge left one blob of its group: it scored `bonus` and became a
+    /// fresh seed.
     Nova {
         value: u32,
         at: Vec2,
@@ -186,23 +187,39 @@ impl Field {
         id
     }
 
-    /// Seed: 10–13 blobs of values 2–8 in random groups, packed loosely around
-    /// the centre on a sunflower spiral so none start overlapping.
-    pub fn seed(&mut self, p: &Physics, rng: &mut Rng) {
+    /// Seed: 10–13 blobs of values 2–8 in the first `groups` groups, packed
+    /// loosely around the centre.
+    pub fn seed(&mut self, p: &Physics, rng: &mut Rng, groups: u8) {
         let count = 10 + rng.below(4);
-        self.scatter(p, rng, count, |rng| 2 << rng.below(3));
+        self.scatter(p, rng, self.centre, count, groups, |rng| 2 << rng.below(3));
     }
 
-    /// Adds `count` blobs in random groups, values from `value`, around the
-    /// centre on a sunflower spiral so none start overlapping.
-    pub fn scatter(&mut self, p: &Physics, rng: &mut Rng, count: usize, mut value: impl FnMut(&mut Rng) -> u32) {
+    /// Adds `count` blobs in the first `groups` groups, values from `value`,
+    /// around `at` on a sunflower spiral, skipping spots already taken so none
+    /// start overlapping.
+    pub fn scatter(
+        &mut self,
+        p: &Physics,
+        rng: &mut Rng,
+        at: Vec2,
+        count: usize,
+        groups: u8,
+        mut value: impl FnMut(&mut Rng) -> u32,
+    ) {
         let golden = std::f32::consts::PI * (3.0 - 5f32.sqrt());
-        for k in 0..count {
-            // Neighbours on the spiral sit about 1.15 σ apart, near rest.
-            let r = p.sigma * 0.65 * (k as f32 + 0.5).sqrt();
-            let pos = self.centre + Vec2::from_angle(k as f32 * golden) * r;
+        let mut k = 0;
+        for _ in 0..count {
+            let pos = loop {
+                // Neighbours on the spiral sit about 1.15 σ apart, near rest.
+                let r = p.sigma * 0.65 * (k as f32 + 0.5).sqrt();
+                let pos = at + Vec2::from_angle(k as f32 * golden) * r;
+                k += 1;
+                if self.blobs.iter().all(|b| b.pos.distance(pos) > p.sigma) {
+                    break pos;
+                }
+            };
             let value = value(rng);
-            let group = rng.below(GROUPS as usize) as u8;
+            let group = rng.below(groups.max(1) as usize) as u8;
             self.add(group, value, pos);
         }
     }

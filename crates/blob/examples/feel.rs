@@ -46,7 +46,7 @@ fn physics(args: &[String]) -> Physics {
 /// A seeded clump left to settle, so launches meet something at rest.
 fn settled(p: &Physics, seed: u64) -> Field {
     let mut f = Field::new();
-    f.seed(p, &mut Rng::new(seed));
+    f.seed(p, &mut Rng::new(seed), 3);
     for _ in 0..240 {
         f.step(p, DT);
     }
@@ -65,7 +65,7 @@ fn main() {
 
     // Settling: a fresh seed; the last moment anything moved faster than 5 u/s.
     let mut f = Field::new();
-    f.seed(&p, &mut Rng::new(7));
+    f.seed(&p, &mut Rng::new(7), 3);
     let mut t = 0.0;
     for i in 1..=600 {
         f.step(&p, DT);

@@ -1,5 +1,5 @@
 //! How blobs look: identical neighbours drawn as one goo, glimmer on the
-//! peak, and the hand-rolled effects (pop, purge, nova, spawn).
+//! peak, and the hand-rolled effects (pop, exclude, nova, spawn).
 
 use std::collections::HashMap;
 use std::f32::consts::{PI, TAU};
@@ -11,7 +11,7 @@ use engine::{Goo, Shapes, rgb, rgba};
 use crate::config::Config;
 
 /// The old build's group colours: azure, emerald, crimson.
-pub const GROUP: [u32; 3] = [0x38bdf8, 0x34d399, 0xfb7185];
+pub const GROUP: [u32; 6] = [0x38bdf8, 0x34d399, 0xfb7185, 0xfbbf24, 0xa78bfa, 0xf97316];
 const GOLD: u32 = 0xf5c542;
 const SHINE: u32 = 0xfff6d6;
 /// Digits: a hair off pure white, so they sit on the colour instead of glaring.
@@ -290,7 +290,7 @@ impl Birth {
     }
 }
 
-/// A droplet thrown off by a merge, a purge or a nova.
+/// A droplet thrown off by a merge, an exclusion or a nova.
 pub struct Drop {
     pos: Vec2,
     vel: Vec2,

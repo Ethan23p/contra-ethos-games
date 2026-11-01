@@ -17,6 +17,7 @@ pub struct Config {
     pub weight_2: f32,
     pub weight_3: f32,
     pub temperature: f32,
+    pub mature: f32,
     pub max_value: i32,
     pub no_repeat: bool,
     pub one_pair: bool,
@@ -82,6 +83,7 @@ impl Default for Config {
             weight_2: rules.size_weights[1] as f32,
             weight_3: rules.size_weights[2] as f32,
             temperature: rules.temperature as f32,
+            mature: rules.mature as f32,
             max_value: rules.max_value as i32,
             no_repeat: rules.no_repeat,
             one_pair: rules.one_pair,
@@ -148,6 +150,7 @@ impl Tunable for Config {
             .float("weight_2", "Weight: 2 dice", "", 0.0..=100.0, 1.0, |c| &mut c.weight_2)
             .float("weight_3", "Weight: 3 dice", "", 0.0..=100.0, 1.0, |c| &mut c.weight_3)
             .float("temperature", "Rarity temperature T", "", 0.1..=20.0, 0.1, |c| &mut c.temperature)
+            .float("mature", "Draws from the board's average", "× draws", 0.0..=1.0, 0.01, |c| &mut c.mature)
             .int("max_value", "Highest spawned value", "", 2..=12, |c| &mut c.max_value)
             .toggle("no_repeat", "No repeated value in a cluster", |c| &mut c.no_repeat)
             .toggle("one_pair", "3 dice: exactly one pair", |c| &mut c.one_pair);
@@ -211,6 +214,7 @@ impl Config {
             gravity: self.gravity.then(|| Dir::ALL[self.gravity_dir.min(3)]),
             size_weights: [self.weight_1 as f64, self.weight_2 as f64, self.weight_3 as f64],
             temperature: self.temperature as f64,
+            mature: self.mature as f64,
             max_value: self.max_value as u32,
             no_repeat: self.no_repeat,
             one_pair: self.one_pair,

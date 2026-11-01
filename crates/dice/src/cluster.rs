@@ -57,11 +57,12 @@ impl Cluster {
 }
 
 /// Spawn: draw a size, a shape of that size, and a value for each cell.
-pub(crate) fn spawn(rules: &Rules, rng: &mut Rng) -> Cluster {
+/// `shift` is how far a mature draw lifts the values.
+pub(crate) fn spawn(rules: &Rules, rng: &mut Rng, shift: usize) -> Cluster {
     let size = rng.weighted(&rules.size_weights) + 1;
     let shapes = SHAPES[size - 1];
     let shape = shapes[rng.below(shapes.len())];
-    let values = roll_values(rules, rng, size);
+    let values = roll_values(rules, rng, size, shift);
     let mut cluster = Cluster { cells: shape.iter().zip(values).map(|(&(x, y), v)| (Pos::new(x, y), v)).collect() };
     for _ in 0..rng.below(4) {
         cluster = cluster.rotated();
@@ -75,8 +76,14 @@ pub fn value_weights(rules: &Rules) -> Vec<f64> {
     (1..=rules.max_value).map(|v| (-rules.mass(v) / rules.temperature).exp()).collect()
 }
 
-fn roll_values(rules: &Rules, rng: &mut Rng, size: usize) -> Vec<u32> {
-    let weights = value_weights(rules);
+fn roll_values(rules: &Rules, rng: &mut Rng, size: usize, shift: usize) -> Vec<u32> {
+    let mut weights = value_weights(rules);
+    if rng.unit() < rules.mature {
+        // The same law, starting from the shift instead of from 1.
+        let shift = shift.min(weights.len().saturating_sub(1));
+        weights.rotate_right(shift);
+        weights[..shift].fill(0.0);
+    }
     let roll_except = |rng: &mut Rng, except: &[u32]| {
         let w: Vec<f64> =
             weights.iter().enumerate().map(|(i, &w)| if except.contains(&(i as u32 + 1)) { 0.0 } else { w }).collect();

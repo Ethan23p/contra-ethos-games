@@ -41,7 +41,12 @@ pub struct Config {
     pub show_bonds: bool,
     pub ceiling: i32,
     pub window: i32,
-    pub widen_every: i32,
+    pub exclude: bool,
+    pub interval: i32,
+    pub group_lever: f32,
+    pub pool_lever: f32,
+    pub max_groups: i32,
+    pub group_nova: bool,
     pub falloff: f32,
     pub queue: i32,
     pub combo_launches: i32,
@@ -186,7 +191,12 @@ impl Config {
             warn_count: 0.45,
             ceiling: r.ceiling as i32,
             window: r.window as i32,
-            widen_every: r.widen_every as i32,
+            exclude: r.exclude,
+            interval: r.interval as i32,
+            group_lever: r.group_lever as f32,
+            pool_lever: r.pool_lever as f32,
+            max_groups: r.max_groups as i32,
+            group_nova: r.group_nova,
             falloff: r.falloff as f32,
             queue: r.queue as i32,
             combo_launches: r.combo_launches as i32,
@@ -200,7 +210,12 @@ impl Config {
         Rules {
             ceiling: self.ceiling.max(1) as u32,
             window: self.window.max(1) as usize,
-            widen_every: self.widen_every.max(1) as u32,
+            exclude: self.exclude,
+            interval: self.interval.max(1) as u32,
+            group_lever: self.group_lever as f64,
+            pool_lever: self.pool_lever as f64,
+            max_groups: self.max_groups.clamp(1, blob::GROUPS as i32) as u8,
+            group_nova: self.group_nova,
             falloff: self.falloff as f64,
             queue: self.queue.max(1) as usize,
             combo_launches: self.combo_launches.max(1) as usize,
@@ -276,13 +291,19 @@ impl Tunable for Config {
             .choice("mode", "Merge size m", &["Bonded (3)", "Unbonded (2)"], |c| &mut c.mode)
             .int("ceiling", "Pool ceiling at least", "", 1..=1024, |c| &mut c.ceiling)
             .int("window", "Pool holds at first", "values", 1..=12, |c| &mut c.window)
-            .int("widen_every", "Pool widens every", "doublings", 1..=20, |c| &mut c.widen_every)
+            .toggle("exclude", "Exclude blobs below the pool", |c| &mut c.exclude)
             .float("falloff", "Draw falloff per step up", "×", 0.5..=4.0, 0.01, |c| &mut c.falloff)
             .int("queue", "Queue length", "", 1..=6, |c| &mut c.queue)
             .int("combo_launches", "Combo counts over", "launches", 1..=20, |c| &mut c.combo_launches)
             .int("nova_bonus", "Nova bonus", "points", 0..=100_000, |c| &mut c.nova_bonus)
-            .int("nova_blobs", "Nova seeds", "blobs", 1..=40, |c| &mut c.nova_blobs)
+            .int("nova_per_group", "Nova seeds per group", "blobs", 1..=40, |c| &mut c.nova_blobs)
+            .toggle("group_nova", "Nova when one of a group is left", |c| &mut c.group_nova)
             .float("grace", "Grace outside the rim", "s", 0.5..=60.0, 0.1, |c| &mut c.grace);
+        s.group("Difficulty")
+            .int("interval", "Rises every", "doublings", 1..=20, |c| &mut c.interval)
+            .float("group_lever", "New group weight", "", 0.0..=10.0, 0.05, |c| &mut c.group_lever)
+            .float("pool_lever", "Wider pool weight", "", 0.0..=10.0, 0.05, |c| &mut c.pool_lever)
+            .int("max_groups", "Groups at most", "", 1..=blob::GROUPS as i32, |c| &mut c.max_groups);
         s.group("Cohesion (Lennard-Jones)")
             .float("epsilon", "Cohesion strength ε", "u²/s²", 0.0..=5000.0, 5.0, |c| &mut c.epsilon)
             .float("spacing", "Pair spacing", "× diameter", 0.5..=2.0, 0.01, |c| &mut c.spacing)

@@ -69,9 +69,25 @@ pub struct Game {
 const RESPAWN_TRIES: usize = 64;
 
 impl Game {
+    /// A fresh game, opening on a lesson: m − 1 connected 1s at random, and a
+    /// single 1 on offer, so the first move is a merge. Placing it stocks
+    /// every slot.
     pub fn new(rules: Rules, seed: u64) -> Self {
-        let board = Board::new(rules.size);
-        Self::with_board(rules, seed, board)
+        let mut rng = Rng::new(seed);
+        let mut board = Board::new(rules.size);
+        let mut cells: Vec<Pos> = Vec::new();
+        while cells.len() + 1 < rules.threshold.max(2) {
+            let joins = |p: &Pos| cells.is_empty() || cells.iter().any(|c| c.manhattan(*p) == 1);
+            let open: Vec<Pos> = board.positions().filter(|&p| board.is_empty_at(p) && joins(&p)).collect();
+            let p = open[rng.below(open.len())];
+            board.set(p, Some(Die { value: 1, born: 1 }));
+            cells.push(p);
+        }
+        if let Some(dir) = rules.gravity {
+            board.fall(dir);
+        }
+        let slots = vec![Cluster { cells: vec![(Pos::new(0, 0), 1)] }];
+        Self { rules, board, slots, score: 0.0, over: false, rng, tick: 1 }
     }
 
     /// A game starting from `board`, for tests and set-up positions. Its dice
@@ -80,7 +96,7 @@ impl Game {
         let tick = board.dice().map(|(_, d)| d.born).max().unwrap_or(0);
         let mut game = Self { rules, board, slots: Vec::new(), score: 0.0, over: false, rng: Rng::new(seed), tick };
         while game.slots.len() < game.rules.slots.max(1) {
-            let c = cluster::spawn(&game.rules, &mut game.rng);
+            let c = game.spawn();
             game.slots.push(c);
         }
         game.replace_dead();
@@ -137,9 +153,15 @@ impl Game {
         let mut steps = vec![Step::Place(self.write(&placed, anchor, at))];
         self.settle(&mut steps);
 
-        let c = cluster::spawn(&self.rules, &mut self.rng);
+        let c = self.spawn();
         self.slots[slot] = c.clone();
         steps.push(Step::Spawn { index: slot, cluster: c });
+        // The opening offers one; the rest of the slots stock after it.
+        while self.slots.len() < self.rules.slots.max(1) {
+            let c = self.spawn();
+            self.slots.push(c.clone());
+            steps.push(Step::Spawn { index: self.slots.len() - 1, cluster: c });
+        }
         if self.board.is_full() {
             self.over = true;
             steps.push(Step::End);
@@ -149,6 +171,13 @@ impl Game {
             }
         }
         Ok(Turn { steps, score: self.score - start_score })
+    }
+
+    /// Spawn, with a mature draw lifted to the board's average value.
+    fn spawn(&mut self) -> Cluster {
+        let (sum, n) = self.board.dice().fold((0, 0), |(sum, n), (_, d)| (sum + d.value, n + 1));
+        let average = if n > 0 { (sum as f64 / n as f64).round() as usize } else { 1 };
+        cluster::spawn(&self.rules, &mut self.rng, average - 1)
     }
 
     /// Writes the dice furthest from the anchor first and the anchor last, one
@@ -236,14 +265,18 @@ impl Game {
             if fits_anywhere(&self.board, &self.slots[index]) {
                 continue;
             }
-            let fresh = (0..RESPAWN_TRIES)
-                .map(|_| cluster::spawn(&self.rules, &mut self.rng))
-                .find(|c| fits_anywhere(&self.board, c))
-                .unwrap_or_else(|| {
-                    // A single die fits any empty cell.
-                    let rules = Rules { size_weights: [1.0, 0.0, 0.0], ..self.rules.clone() };
-                    cluster::spawn(&rules, &mut self.rng)
-                });
+            let mut fresh = None;
+            for _ in 0..RESPAWN_TRIES {
+                fresh = Some(self.spawn()).filter(|c| fits_anywhere(&self.board, c));
+                if fresh.is_some() {
+                    break;
+                }
+            }
+            let fresh = fresh.unwrap_or_else(|| {
+                // A single die fits any empty cell.
+                let rules = Rules { size_weights: [1.0, 0.0, 0.0], ..self.rules.clone() };
+                cluster::spawn(&rules, &mut self.rng, 0)
+            });
             self.slots[index] = fresh.clone();
             replaced.push((index, fresh));
         }
@@ -306,7 +339,8 @@ impl Game {
             board.set(p, Some(die));
         }
         let count: usize = take(t)?;
-        if count != rules.slots.max(1) {
+        // One is the opening's, before its first placement.
+        if count != rules.slots.max(1) && count != 1 {
             return None;
         }
         let mut slots = Vec::with_capacity(count);

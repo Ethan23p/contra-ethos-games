@@ -4,7 +4,7 @@
 //! [`Field`] holds the blobs, their bonds and the merges in progress, and
 //! [`Field::step`] runs the spec's continuous Move → Merge loop at a fixed dt
 //! with substeps; [`Field::launch`] and [`Field::seed`] add blobs. [`Game`]
-//! plays the rules on top: the queue and its pool, Purge, scoring, nova and
+//! plays the rules on top: the queue and its pool, Exclude, scoring, nova and
 //! the ending. Physics constants live in [`Physics`], gameplay ones in [`Rules`].
 //!
 //! Units: world units are the old build's pixels on a 600-unit field, and
@@ -21,8 +21,9 @@ pub use field::{Blob, Event, Field, Merge, Pending, merged_value};
 pub use game::{Game, Rules};
 pub use rng::Rng;
 
-/// Colour classes. Only identical blobs (same group, same value) interact.
-pub const GROUPS: u8 = 3;
+/// How many colour classes exist. Only identical blobs (same group, same
+/// value) interact.
+pub const GROUPS: u8 = 6;
 
 /// Every physics and field constant. `Default` is the shipped set.
 #[derive(Clone, Debug, PartialEq)]
