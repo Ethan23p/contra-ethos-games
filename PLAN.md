@@ -2,7 +2,7 @@
 
 The living plan for rebuilding Dice Merge and Blob Merge in Rust + WebGPU and publishing them on contra-ethos.com. Tick steps as they land, and log decisions at the bottom.
 
-**Current phase: 3, Blob Merge (look and feel).** `crates/blob` has the field, its physics and every spec rule (`Game`, `Rules`), with policy tests. `apps/blob` at play.contra-ethos.com/blob/ is playable end to end; Ethan's phone pass (2026-10-26) found the feel good, rapid fire included. The gloopy look, effects and glimmer are in (2026-10-26). Next: Ethan's phone pass on the look, then the overflow warning.
+**Current phase: 3, Blob Merge (last item).** `crates/blob` has the field, its physics and every spec rule (`Game`, `Rules`), with policy tests. `apps/blob` at play.contra-ethos.com/blob/ is playable end to end. Ethan's phone pass (2026-10-31) found the look splendid, and the two-slot dice supply a great change to the gameplay. Next: the overflow warning, then Phase 4.
 
 ## Goal state
 
@@ -31,7 +31,7 @@ contra-ethos-games/            Cargo workspace
 Why it's split this way:
 - **Logic sits apart from the renderer.** The rules can then be tested natively and quickly against the spec, and they survive any renderer or UI change. It also matches how the specs separate Entities and Capabilities from presentation.
 - **Every app runs natively as well as in the browser.** Native builds iterate faster and give clearer errors. They also let us render headless to PNG, so Claude can check visuals without a browser (the screenshot-strip approach that works well in Phosphor-Sand).
-- **The site stays static.** contra-ethos.com stays plain HTML and CSS. This repo builds static bundles (`.wasm` + JS glue + HTML), and they get copied in under something like `contra-ethos.com/play/<game>/`.
+- **The site stays static.** contra-ethos.com stays plain HTML and CSS. This repo builds static bundles (`.wasm` + JS glue + HTML) and publishes them at `play.contra-ethos.com/<game>/`.
 
 ## Phases
 
@@ -80,10 +80,14 @@ The discrete game comes first: it's the cheapest way to prove the spec → code 
 - [x] Combo by merges, not time: it counts merges over the last 3 launch windows, replacing the 1.4 s reset.
 - [x] Effects, hand-rolled: a merge lands big and wobbles to size, with a splash ring and droplets; a purge greys and deflates, shedding drops; a nova flashes, sends a gold shockwave and droplets, and the new seed grows in outward. The opening seed grows in too.
 - [x] Glimmer: peak blobs get a gold rim, a sheen that sweeps across and waits out of sight before looping, and glints that move only while dark. Every look constant is in the panel's Look and Glimmer groups.
+- [x] Digit treatment: a hard shadow at 80% opacity, shifted 0.065 × digit right and down, with no outline (Ethan, 2026-10-31).
+- [x] Phone pass on the look, and on the dice slots and layout (Ethan, 2026-10-31).
 
 ### 4. Publish
 - [ ] Release builds: size budget, loading screen, a message when WebGPU isn't available.
-- [ ] Both games under `contra-ethos.com/play/`, linked from the home page.
+- [ ] Persistent state: a game in progress survives reloads and leaving the site.
+- [ ] In-game menu with New game a tap or two away, separate from the config panel. Ships with persistent state, since players need a way out of a saved game once the panel is gated.
+- [x] Both games reachable from the contra-ethos.com home page, through their project pages' Play links; they stay at play.contra-ethos.com.
 
 ### 5. Shared UI (later sessions)
 - [ ] Design pass: menus, settings, tuning, game switching, one visual language.
@@ -138,3 +142,5 @@ None right now.
 | 2026-10-26 | Glimmer shows only once the peak is above the pool; gold blobs keep their group colour, warmed, with a gold rim. | At the start the peak (8) is in the pool and half the field would glimmer. Only identical blobs merge, so the group must stay readable. |
 | 2026-10-26 | Goo groups fuse identical blobs whose surfaces come within the blend, plus merging and bonded ones; other blobs keep their gap. | Fusing only what can merge keeps the look honest to the rules. |
 | 2026-10-27 | Dice supply is staging slots (two by default), any of which may be placed; a placed slot restocks in place (`Rules::slots`). The board fills the screen width (or the height left after a minimum staging band), and staged clusters size to fit their slot in any rotation, never larger than on the board. | Ethan's call: choice instead of a fixed queue, and no next-in-queue preview. |
+| 2026-10-31 | The games stay at play.contra-ethos.com; there's no `contra-ethos.com/play/`. | Ethan: the plan meant one or the other, and the subdomain was set up ahead of schedule. |
+| 2026-10-31 | Persistent state and the in-game menu land together in Phase 4. | Ethan wants games to survive reloads, with New game always close; saved games need that exit once the panel is gated out of player builds. |
