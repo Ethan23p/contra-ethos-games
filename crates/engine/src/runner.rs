@@ -285,6 +285,13 @@ impl<A: App> ApplicationHandler<Graphics> for Runner<A> {
         let renderer = egui_wgpu::Renderer::new(&graphics.device, graphics.config.format, Default::default());
         self.dev = Some(Dev { ctx, state, renderer, panel: Panel::new() });
 
+        // The page's loading screen has done its job.
+        #[cfg(target_arch = "wasm32")]
+        if let Some(loading) = web_sys::window().and_then(|w| w.document()).and_then(|d| d.get_element_by_id("loading"))
+        {
+            loading.remove();
+        }
+
         graphics.window.request_redraw();
         self.graphics = Some(graphics);
         self.last = Instant::now();

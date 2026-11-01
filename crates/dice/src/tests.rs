@@ -540,3 +540,29 @@ fn invariants_hold_through_random_games() {
         }
     }
 }
+
+#[test]
+fn a_saved_game_resumes_exactly() {
+    let cells = || (0..5).flat_map(|y| (0..5).map(move |x| Pos::new(x, y)));
+    let mut game = Game::new(Rules::default(), 11);
+    for _ in 0..8 {
+        let at = cells().find(|&p| game.can_place(0, 0, p)).expect("room on the board");
+        game.place(0, 0, at).unwrap();
+    }
+    let mut back = Game::from_save(Rules::default(), &game.to_save()).expect("a save");
+    assert_eq!(back.to_save(), game.to_save());
+    assert!(back.board() == game.board());
+    assert_eq!(back.score(), game.score());
+    // The generator carries over, so what comes next is the same.
+    let at = cells().find(|&p| game.can_place(1, 0, p)).unwrap();
+    assert_eq!(back.place(1, 0, at), game.place(1, 0, at));
+}
+
+#[test]
+fn a_save_that_does_not_fit_starts_fresh() {
+    let save = Game::new(Rules::default(), 11).to_save();
+    assert!(Game::from_save(Rules { size: 6, ..Rules::default() }, &save).is_none());
+    assert!(Game::from_save(Rules { slots: 3, ..Rules::default() }, &save).is_none());
+    assert!(Game::from_save(Rules::default(), "").is_none());
+    assert!(Game::from_save(Rules::default(), &save[..save.len() / 2]).is_none());
+}

@@ -7,6 +7,7 @@
 mod goo;
 mod gpu;
 mod input;
+mod menu;
 mod panel;
 mod runner;
 mod screen;
@@ -19,6 +20,7 @@ pub mod headless;
 
 pub use goo::Goo;
 pub use input::{GestureConfig, Input, Phase, Pointer};
+pub use menu::{Menu, Reply};
 pub use runner::{App, Frame, run};
 pub use screen::{Anchor, EM, Screen};
 pub use shapes::{Shapes, Styled, View, rgb, rgba};

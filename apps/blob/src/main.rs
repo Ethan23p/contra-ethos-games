@@ -14,7 +14,7 @@ use std::collections::HashMap;
 
 use blob::{Event, Game, Rng};
 use engine::glam::Vec2;
-use engine::{Anchor, App, Frame, Input, Phase, Screen, Shapes, Tuner, View, rgb, rgba};
+use engine::{Anchor, App, Frame, Input, Menu, Phase, Reply, Screen, Shapes, Tuner, View, rgb, rgba};
 
 use config::Config;
 use look::{Birth, Drawn, Drops, RED};
@@ -26,6 +26,9 @@ const TEXT: u32 = 0xf2f4f8;
 
 /// Height of the band at the top, in ems.
 const BAND: f32 = 3.5;
+const SAVE_KEY: &str = "blob-game";
+/// How often a game in play is saved, s.
+const SAVE_EVERY: f32 = 0.5;
 
 struct BlobApp {
     tuner: Tuner<Config>,
@@ -50,6 +53,10 @@ struct BlobApp {
     drops: Drops,
     /// Randomness for effects only, apart from the game's.
     fx: Rng,
+    menu: Menu,
+    /// Whether the game is saved as it goes; off for headless snapshots.
+    persist: bool,
+    saved: f32,
 }
 
 enum Flash {
@@ -107,9 +114,33 @@ impl BlobApp {
             born: HashMap::new(),
             drops: Drops(Vec::new()),
             fx: Rng::new(seed ^ 0x5eed),
+            menu: Menu::new(Anchor::TOP, Vec2::new(0.0, 1.75), TEXT, 0x16181f),
+            persist: false,
+            saved: 0.0,
         };
         app.reset();
         app
+    }
+
+    /// Picks up the saved game, if there's one, and saves from here on.
+    fn resume(mut self) -> Self {
+        self.persist = true;
+        let rules = self.tuner.current.rules();
+        let saved = engine::tune::storage::load(SAVE_KEY).and_then(|text| Game::from_save(rules, &text));
+        if let Some(game) = saved {
+            self.game = game;
+            self.born.clear();
+            self.prev.clear();
+            self.prev_centre = self.game.field.centre;
+        }
+        self
+    }
+
+    fn save(&mut self) {
+        self.saved = self.time;
+        if self.persist {
+            engine::tune::storage::save(SAVE_KEY, &self.game.to_save());
+        }
     }
 
     fn reset(&mut self) {
@@ -128,6 +159,7 @@ impl BlobApp {
             .iter()
             .map(|b| (b.id, (Birth::Spawn { delay: b.pos.distance(centre) / 700.0 }, self.time)))
             .collect();
+        self.save();
     }
 
     fn launch(&mut self) {
@@ -162,7 +194,19 @@ impl BlobApp {
 }
 
 impl App for BlobApp {
-    fn input(&mut self, input: Input, _: &Frame) {
+    fn input(&mut self, input: Input, frame: &Frame) {
+        match self.menu.input(input, frame.screen()) {
+            Reply::Pass => {}
+            Reply::Taken => {
+                self.pressed = false;
+                return;
+            }
+            Reply::NewGame => {
+                self.pressed = false;
+                self.reset();
+                return;
+            }
+        }
         if let Input::Pointer(p) = input {
             match p.phase {
                 Phase::Down => {
@@ -182,6 +226,12 @@ impl App for BlobApp {
     }
 
     fn update(&mut self, dt: f32) {
+        if self.menu.open {
+            // Paused: nothing left to draw between.
+            self.prev.clear();
+            self.prev_centre = self.game.field.centre;
+            return;
+        }
         self.time += dt;
         let physics = self.tuner.current.physics();
         self.game.rules = self.tuner.current.rules();
@@ -225,6 +275,7 @@ impl App for BlobApp {
                 }
                 Event::Ended { .. } => {
                     self.ended = Some(self.time);
+                    self.save();
                     continue;
                 }
                 _ => continue,
@@ -235,6 +286,9 @@ impl App for BlobApp {
         self.flashes.retain(|(f, t)| now - t < f.life());
         self.drops.step(dt, now);
         self.born.retain(|_, (b, t)| !b.done(now - *t));
+        if now - self.saved >= SAVE_EVERY && self.ended.is_none() {
+            self.save();
+        }
     }
 
     fn frame(&mut self, f: &Frame, s: &mut Shapes) {
@@ -397,6 +451,7 @@ impl App for BlobApp {
                 s.text(mid + Vec2::new(0.0, screen.em(2.4)), screen.em(0.8), "TAP TO PLAY AGAIN", rgb(DIM));
             }
         }
+        self.menu.draw(s, screen);
         s.view = self.view;
     }
 
@@ -498,5 +553,5 @@ fn main() {
             return;
         }
     }
-    engine::run(BlobApp::new(Tuner::new(), fresh_seed()));
+    engine::run(BlobApp::new(Tuner::new(), fresh_seed()).resume());
 }

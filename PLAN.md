@@ -2,7 +2,7 @@
 
 The living plan for rebuilding Dice Merge and Blob Merge in Rust + WebGPU and publishing them on contra-ethos.com. Tick steps as they land, and log decisions at the bottom.
 
-**Current phase: 4, Publish.** Both games are playable end to end at play.contra-ethos.com. Ethan's phone pass (2026-10-31) found the look splendid, and the two-slot dice supply a great change to the gameplay.
+**Current phase: 5, Shared UI (later sessions).** Phases 0 to 4 are done: both games are playable end to end at play.contra-ethos.com, keep their progress, and have an in-game menu. Next: Ethan's phone pass on the overflow warning, saved games and the menu.
 
 ## Goal state
 
@@ -84,9 +84,9 @@ The discrete game comes first: it's the cheapest way to prove the spec → code 
 - [x] Phone pass on the look, and on the dice slots and layout (Ethan, 2026-10-31).
 
 ### 4. Publish
-- [ ] Release builds: size budget, loading screen, a message when WebGPU isn't available.
-- [ ] Persistent state: a game in progress survives reloads and leaving the site.
-- [ ] In-game menu with New game a tap or two away, separate from the config panel. Ships with persistent state, since players need a way out of a saved game once the panel is gated.
+- [x] Release builds: a 1.25 MB gzipped budget per game that fails the deploy (`web/build.sh`), a loading screen, and a message when WebGPU isn't available or finds no adapter.
+- [x] Persistent state: a game in progress survives reloads and leaving the site (`Game::to_save`, `Game::from_save`, in localStorage). Dice saves on every action, Blob every half second.
+- [x] In-game menu with New game two taps away, separate from the config panel, pausing the game while open (`engine::Menu`). Ships with persistent state, since a saved game needs a way out.
 - [x] Both games reachable from the contra-ethos.com home page, through their project pages' Play links; they stay at play.contra-ethos.com.
 
 ### 5. Shared UI (later sessions)
@@ -143,4 +143,7 @@ None right now.
 | 2026-10-26 | Goo groups fuse identical blobs whose surfaces come within the blend, plus merging and bonded ones; other blobs keep their gap. | Fusing only what can merge keeps the look honest to the rules. |
 | 2026-10-27 | Dice supply is staging slots (two by default), any of which may be placed; a placed slot restocks in place (`Rules::slots`). The board fills the screen width (or the height left after a minimum staging band), and staged clusters size to fit their slot in any rotation, never larger than on the board. | Ethan's call: choice instead of a fixed queue, and no next-in-queue preview. |
 | 2026-10-31 | The games stay at play.contra-ethos.com; there's no `contra-ethos.com/play/`. | Ethan: the plan meant one or the other, and the subdomain was set up ahead of schedule. |
-| 2026-10-31 | Persistent state and the in-game menu land together in Phase 4. | Ethan wants games to survive reloads, with New game always close; saved games need that exit once the panel is gated out of player builds. |
+| 2026-10-31 | Persistent state and the in-game menu land together in Phase 4. | Ethan wants games to survive reloads, with New game always close; a saved game needs that exit. |
+| 2026-10-31 | The config panel stays in the published builds for now. | Ethan still tunes on the deployed build; gating it out waits for Phase 5's player UI. This supersedes the 2026-10-22 plan to gate it in Phase 4. |
+| 2026-10-31 | Saves are hand-written text, versioned by their first word (`dice1`, `blob1`), not serde. | No new dependency for a few short formats. A save that doesn't parse or fit the rules starts a new game. |
+| 2026-10-31 | Blob saves drop merges in progress; their blobs are still touching and merge again on restore. | Keeps the format small, and a half-finished merge is the only thing lost. |

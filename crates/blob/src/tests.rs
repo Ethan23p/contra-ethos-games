@@ -725,3 +725,39 @@ fn ending_launches_stop_once_the_game_is_over() {
     play(&mut g, &p, 7.0);
     assert!(g.launch(&p, 0.0).is_none());
 }
+
+#[test]
+fn a_saved_game_resumes_exactly() {
+    let p = Physics::default();
+    let mut game = Game::new(&p, Rules::default(), 5);
+    for k in 0..6 {
+        for _ in 0..90 {
+            game.step(&p, 1.0 / 120.0);
+        }
+        game.launch(&p, k as f32);
+    }
+    // Between merges, so nothing in progress is dropped.
+    for _ in 0..1200 {
+        game.step(&p, 1.0 / 120.0);
+        if game.field.merges.is_empty() && game.field.pending.is_empty() {
+            break;
+        }
+    }
+    let mut back = Game::from_save(Rules::default(), &game.to_save()).expect("a save");
+    assert_eq!(back.to_save(), game.to_save());
+    for _ in 0..240 {
+        game.step(&p, 1.0 / 120.0);
+        back.step(&p, 1.0 / 120.0);
+    }
+    assert_eq!(back.to_save(), game.to_save(), "and carries on the same");
+}
+
+#[test]
+fn a_finished_or_broken_save_starts_fresh() {
+    let p = Physics::default();
+    let mut game = Game::new(&p, Rules::default(), 5);
+    let save = game.to_save();
+    assert!(Game::from_save(Rules::default(), &save[..save.len() / 2]).is_none());
+    game.over = true;
+    assert!(Game::from_save(Rules::default(), &game.to_save()).is_none());
+}

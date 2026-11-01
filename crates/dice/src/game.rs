@@ -1,5 +1,8 @@
 //! The game state and a turn: Rotate* → Place → Merge* → Spawn.
 
+use std::fmt::Write;
+use std::str::SplitAsciiWhitespace;
+
 use crate::board::{Board, Die, Move, Pos};
 use crate::cluster::{self, Cluster};
 use crate::rng::Rng;
@@ -255,4 +258,68 @@ fn fits_at(board: &Board, cluster: &Cluster, anchor: usize, at: Pos) -> bool {
 /// Whether any rotation of `cluster` has a legal placement.
 pub(crate) fn fits_anywhere(board: &Board, cluster: &Cluster) -> bool {
     cluster.rotations().iter().any(|c| board.positions().any(|p| fits_at(board, c, 0, p)))
+}
+
+/// The next saved field, parsed.
+fn take<T: std::str::FromStr>(t: &mut SplitAsciiWhitespace) -> Option<T> {
+    t.next()?.parse().ok()
+}
+
+impl Game {
+    /// The whole game as text, to resume later. A finished game saves as
+    /// nothing, so the next visit starts fresh.
+    pub fn to_save(&self) -> String {
+        if self.over {
+            return String::new();
+        }
+        let mut s = format!("dice1 {} {} {} {}", self.board.size(), self.score, self.tick, self.rng.state());
+        let dice: Vec<_> = self.board.dice().collect();
+        write!(s, " {}", dice.len()).unwrap();
+        for (p, d) in dice {
+            write!(s, " {} {} {} {}", p.x, p.y, d.value, d.born).unwrap();
+        }
+        write!(s, " {}", self.slots.len()).unwrap();
+        for c in &self.slots {
+            write!(s, " {}", c.len()).unwrap();
+            for (p, v) in &c.cells {
+                write!(s, " {} {} {v}", p.x, p.y).unwrap();
+            }
+        }
+        s
+    }
+
+    /// A game from [`Game::to_save`], or `None` if the text isn't one or its
+    /// board and slots don't fit `rules`.
+    pub fn from_save(rules: Rules, text: &str) -> Option<Self> {
+        let t = &mut text.split_ascii_whitespace();
+        if t.next()? != "dice1" || take::<usize>(t)? != rules.size {
+            return None;
+        }
+        let (score, tick, rng) = (take(t)?, take(t)?, Rng::new(take(t)?));
+        let mut board = Board::new(rules.size);
+        for _ in 0..take::<usize>(t)? {
+            let p = Pos::new(take(t)?, take(t)?);
+            let die = Die { value: take(t)?, born: take(t)? };
+            if !board.contains(p) {
+                return None;
+            }
+            board.set(p, Some(die));
+        }
+        let count: usize = take(t)?;
+        if count != rules.slots.max(1) {
+            return None;
+        }
+        let mut slots = Vec::with_capacity(count);
+        for _ in 0..count {
+            let mut cells = Vec::new();
+            for _ in 0..take::<usize>(t)? {
+                cells.push((Pos::new(take(t)?, take(t)?), take(t)?));
+            }
+            if cells.is_empty() {
+                return None;
+            }
+            slots.push(Cluster { cells });
+        }
+        Some(Self { rules, board, slots, score, over: false, rng, tick })
+    }
 }

@@ -1,5 +1,8 @@
 //! The field: blobs, bonds and merges in progress, and the Move → Merge loop.
 
+use std::fmt::Write;
+use std::str::SplitAsciiWhitespace;
+
 use glam::Vec2;
 
 use crate::{GROUPS, Physics, Rng};
@@ -90,6 +93,11 @@ pub enum Event {
     },
 }
 
+/// The next saved field, parsed.
+pub(crate) fn take<T: std::str::FromStr>(t: &mut SplitAsciiWhitespace) -> Option<T> {
+    t.next()?.parse().ok()
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Field {
     pub blobs: Vec<Blob>,
@@ -115,6 +123,39 @@ impl Field {
 
     pub fn take_events(&mut self) -> Vec<Event> {
         std::mem::take(&mut self.events)
+    }
+
+    /// Writes the field as text. Merges in progress aren't kept: their blobs
+    /// are still touching, so they merge again once restored.
+    pub(crate) fn save(&self, s: &mut String) {
+        write!(s, " {} {} {} {} {}", self.centre.x, self.centre.y, self.jolt, self.next_id, self.blobs.len()).unwrap();
+        for b in &self.blobs {
+            let launched = b.launched as u8;
+            write!(s, " {} {} {} {} {}", b.id, b.group, b.value, b.pos.x, b.pos.y).unwrap();
+            write!(s, " {} {} {launched} {}", b.vel.x, b.vel.y, b.wait).unwrap();
+        }
+        write!(s, " {}", self.bonds.len()).unwrap();
+        for (a, b) in &self.bonds {
+            write!(s, " {a} {b}").unwrap();
+        }
+    }
+
+    /// A field written by [`Field::save`].
+    pub(crate) fn load(t: &mut SplitAsciiWhitespace) -> Option<Self> {
+        let centre = Vec2::new(take(t)?, take(t)?);
+        let (jolt, next_id) = (take(t)?, take(t)?);
+        let mut field = Self { centre, jolt, next_id, ..Self::default() };
+        for _ in 0..take::<usize>(t)? {
+            let (id, group, value) = (take(t)?, take(t)?, take(t)?);
+            let pos = Vec2::new(take(t)?, take(t)?);
+            let vel = Vec2::new(take(t)?, take(t)?);
+            let (launched, wait) = (take::<u8>(t)? != 0, take(t)?);
+            field.blobs.push(Blob { id, group, value, pos, vel, merging: None, launched, wait });
+        }
+        for _ in 0..take::<usize>(t)? {
+            field.bonds.push((take(t)?, take(t)?));
+        }
+        Some(field)
     }
 
     pub fn blob(&self, id: u32) -> Option<&Blob> {

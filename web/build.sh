@@ -16,5 +16,15 @@ for app in "${apps[@]}"; do
   # --dist path is relative, so it needs no conversion either.
   (cd "$root/apps/$app" && MSYS_NO_PATHCONV=1 trunk build --release --public-url "/$app/" --dist "../../target/site/$app")
 done
+# Size budget per game, gzipped as the wasm travels. Over it, the build fails and nothing deploys.
+budget=1250000
+for app in dice blob; do
+  size=$(gzip -9c "$out/$app"/*_bg.wasm | wc -c)
+  echo "$app: $size bytes gzipped (budget $budget)"
+  if [ "$size" -gt "$budget" ]; then
+    echo "$app is over its size budget" >&2
+    exit 1
+  fi
+done
 cp "$root/web/index.html" "$root/web/CNAME" "$out/"
 echo "site built in $out"

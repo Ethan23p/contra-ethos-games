@@ -1,6 +1,9 @@
 //! The game on top of the field: the launcher's queue and the pool it draws
 //! from, Purge, scoring and the combo, nova, and the ending.
 
+use std::fmt::Write;
+
+use crate::field::take;
 use crate::{Event, Field, GROUPS, Physics, Rng};
 
 /// Every gameplay constant. `Default` is the spec's shipped set.
@@ -96,6 +99,58 @@ impl Game {
         };
         game.refill();
         game
+    }
+
+    /// The whole game as text, to resume later. A finished game saves as
+    /// nothing, so the next visit starts fresh.
+    pub fn to_save(&self) -> String {
+        if self.over {
+            return String::new();
+        }
+        let mut s = format!("blob1 {} {} {}", self.score, self.combo, self.rng.state());
+        self.field.save(&mut s);
+        write!(s, " {}", self.windows.len()).unwrap();
+        for w in &self.windows {
+            write!(s, " {w}").unwrap();
+        }
+        write!(s, " {}", self.queue.len()).unwrap();
+        for (g, v) in &self.queue {
+            write!(s, " {g} {v}").unwrap();
+        }
+        write!(s, " {}", self.outside.len()).unwrap();
+        for (id, t) in &self.outside {
+            write!(s, " {id} {t}").unwrap();
+        }
+        s
+    }
+
+    /// A game from [`Game::to_save`], or `None` if the text isn't one.
+    pub fn from_save(rules: Rules, text: &str) -> Option<Self> {
+        let t = &mut text.split_ascii_whitespace();
+        if t.next()? != "blob1" {
+            return None;
+        }
+        let (score, combo, rng) = (take(t)?, take(t)?, Rng::new(take(t)?));
+        let field = Field::load(t)?;
+        let mut windows = Vec::new();
+        for _ in 0..take::<usize>(t)? {
+            windows.push(take(t)?);
+        }
+        let mut queue = Vec::new();
+        for _ in 0..take::<usize>(t)? {
+            queue.push((take(t)?, take(t)?));
+        }
+        let mut outside = Vec::new();
+        for _ in 0..take::<usize>(t)? {
+            outside.push((take(t)?, take(t)?));
+        }
+        if field.blobs.is_empty() || windows.is_empty() {
+            return None;
+        }
+        let events = Vec::new();
+        let mut game = Self { field, rules, queue, score, combo, windows, outside, over: false, rng, events };
+        game.refill();
+        Some(game)
     }
 
     /// Field events and the game's own, since the last call.

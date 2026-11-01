@@ -16,13 +16,14 @@ use std::f32::consts::{FRAC_PI_2, TAU};
 
 use dice::{Cluster, Game, Pos, Step};
 use engine::glam::Vec2;
-use engine::{App, Frame, Input, Screen, Shapes, Tuner, View, rgb, rgba};
+use engine::{Anchor, App, Frame, Input, Menu, Reply, Screen, Shapes, Tuner, View, rgb, rgba};
 
 use config::Config;
 use look::*;
 use player::{Fx, Player};
 
 const BEST_KEY: &str = "dice-best";
+const SAVE_KEY: &str = "dice-game";
 
 enum Hand {
     Idle,
@@ -62,9 +63,10 @@ struct DiceApp {
     /// When each slot was last restocked, for the entrance pop.
     entered: Vec<f32>,
     best: f64,
-    /// Whether the best score is saved; off for headless snapshots.
+    /// Whether the game and best score are saved; off for headless snapshots.
     persist: bool,
     time: f32,
+    menu: Menu,
 }
 
 impl DiceApp {
@@ -84,10 +86,28 @@ impl DiceApp {
             best,
             persist: true,
             time: 0.0,
+            menu: Menu::new(Anchor::TOP_RIGHT, Vec2::new(-2.0, 1.75), TEXT, 0x16140f),
         };
         // A stand-in until the first frame lays out the real screen.
         app.hud(Screen::new(Vec2::new(375.0, 812.0), 1.0));
         app
+    }
+
+    /// Picks up the saved game, if there's one.
+    fn resume(mut self) -> Self {
+        let rules = self.tuner.current.rules();
+        let saved = engine::tune::storage::load(SAVE_KEY).and_then(|text| Game::from_save(rules, &text));
+        if let Some(game) = saved {
+            self.game = game;
+            self.player = Player::new(self.game.board().clone());
+        }
+        self
+    }
+
+    fn save(&self) {
+        if self.persist {
+            engine::tune::storage::save(SAVE_KEY, &self.game.to_save());
+        }
     }
 
     /// Lays out the screen, keeping the view and the slots for input.
@@ -105,6 +125,7 @@ impl DiceApp {
         let n = self.game.slots().len();
         self.turns = (0..n).map(|_| Turn { from: 0.0, start: 0.0, secs: 0.0 }).collect();
         self.entered = vec![self.time; n];
+        self.save();
     }
 
     fn layout(&self) -> Layout {
@@ -122,6 +143,7 @@ impl DiceApp {
         };
         self.game.rotate(slot);
         self.turns[slot] = Turn { from, start: self.time, secs: ms / 1000.0 };
+        self.save();
     }
 
     fn turn_angle(&self, slot: usize) -> f32 {
@@ -166,6 +188,7 @@ impl DiceApp {
             }
             self.player.play(self.time, turn.steps, dropped, &self.tuner.current);
             self.hand = Hand::Idle;
+            self.save();
             if self.game.score() > self.best {
                 self.best = self.game.score();
                 if self.persist {
@@ -222,7 +245,21 @@ fn mid(cluster: &Cluster) -> Vec2 {
 }
 
 impl App for DiceApp {
-    fn input(&mut self, input: Input, _: &Frame) {
+    fn input(&mut self, input: Input, frame: &Frame) {
+        match self.menu.input(input, frame.screen()) {
+            Reply::Pass => {}
+            Reply::Taken => {
+                // A cluster held while another finger opened the menu goes home.
+                if self.menu.open && matches!(self.hand, Hand::Dragging { .. }) {
+                    self.hand = Hand::Idle;
+                }
+                return;
+            }
+            Reply::NewGame => {
+                self.new_game();
+                return;
+            }
+        }
         let view = self.view;
         let world = |p: Vec2| view.to_world(p);
         match input {
@@ -270,6 +307,9 @@ impl App for DiceApp {
     }
 
     fn update(&mut self, dt: f32) {
+        if self.menu.open {
+            return;
+        }
         self.time += dt;
         self.sync_rules();
         let c = &self.tuner.current;
@@ -431,6 +471,7 @@ impl App for DiceApp {
         if self.game.is_over() && !self.player.busy() {
             hud.game_over(s, self.game.score());
         }
+        self.menu.draw(s, f.screen());
     }
 
     fn config(&mut self) -> Option<&mut dyn engine::tune::Config> {
@@ -492,5 +533,5 @@ fn main() {
             return;
         }
     }
-    engine::run(DiceApp::new(Tuner::new(), fresh_seed()));
+    engine::run(DiceApp::new(Tuner::new(), fresh_seed()).resume());
 }
