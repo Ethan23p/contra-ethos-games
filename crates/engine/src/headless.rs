@@ -6,7 +6,7 @@ use std::path::Path;
 use glam::Vec2;
 
 use crate::gpu::request_device;
-use crate::runner::{App, Frame};
+use crate::runner::{App, Frame, Gpu};
 use crate::shapes::{ShapeRenderer, Shapes, View};
 
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
@@ -17,6 +17,7 @@ pub fn snapshot_strip<A: App>(app: &mut A, width: u32, height: u32, times: &[f32
     let instance = wgpu::Instance::default();
     let (_adapter, device, queue) = pollster::block_on(request_device(&instance, None));
     let mut renderer = ShapeRenderer::new(&device, &queue, FORMAT);
+    app.gpu_init(&Gpu { device: &device, queue: &queue, format: FORMAT });
 
     let mut strip = image::RgbaImage::new(width * times.len() as u32, height);
     let mut shapes = Shapes::default();
@@ -35,21 +36,22 @@ pub fn snapshot_strip<A: App>(app: &mut A, width: u32, height: u32, times: &[f32
         shapes.clear_shapes();
         shapes.view = View::PIXELS;
         app.frame(&frame, &mut shapes);
-        let pixels = render_once(&device, &queue, &mut renderer, &shapes, width, height);
+        let pixels = render_once(&device, &queue, &mut renderer, &shapes, &frame, app);
         let tile = image::RgbaImage::from_raw(width, height, pixels).expect("frame size");
         image::imageops::replace(&mut strip, &tile, (i as u32 * width) as i64, 0);
     }
     strip.save(path).expect("write png");
 }
 
-fn render_once(
+fn render_once<A: App>(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     renderer: &mut ShapeRenderer,
     shapes: &Shapes,
-    width: u32,
-    height: u32,
+    frame: &Frame,
+    app: &mut A,
 ) -> Vec<u8> {
+    let (width, height) = (frame.size.x as u32, frame.size.y as u32);
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("snapshot"),
         size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
@@ -73,7 +75,8 @@ fn render_once(
     });
 
     let mut encoder = device.create_command_encoder(&Default::default());
-    renderer.render(device, queue, &mut encoder, &view, Vec2::new(width as f32, height as f32), shapes);
+    let covered = app.gpu_frame(&Gpu { device, queue, format: FORMAT }, &mut encoder, &view, frame);
+    renderer.render(device, queue, &mut encoder, &view, frame.size, shapes, !covered);
     encoder.copy_texture_to_buffer(
         texture.as_image_copy(),
         wgpu::TexelCopyBufferInfo {

@@ -42,6 +42,15 @@ impl Frame {
     }
 }
 
+/// Direct GPU access, for apps that record passes of their own (a compute
+/// simulation, say) alongside the engine's shapes.
+pub struct Gpu<'a> {
+    pub device: &'a wgpu::Device,
+    pub queue: &'a wgpu::Queue,
+    /// The format of the target [`App::gpu_frame`] draws into.
+    pub format: wgpu::TextureFormat,
+}
+
 pub trait App: 'static {
     /// Length of one simulation step, seconds.
     fn step(&self) -> f32 {
@@ -60,6 +69,24 @@ pub trait App: 'static {
 
     /// Describe what to draw.
     fn frame(&mut self, frame: &Frame, shapes: &mut Shapes);
+
+    /// Called once, when the GPU is ready and before the first frame: create
+    /// pipelines and buffers here.
+    fn gpu_init(&mut self, _gpu: &Gpu) {}
+
+    /// Record the app's own passes for this frame into `encoder`. They run
+    /// before the shapes, so shapes and the overlay draw on top. Return `true`
+    /// if they covered the whole of `target`, so the shapes keep it instead of
+    /// clearing it.
+    fn gpu_frame(
+        &mut self,
+        _gpu: &Gpu,
+        _encoder: &mut wgpu::CommandEncoder,
+        _target: &wgpu::TextureView,
+        _frame: &Frame,
+    ) -> bool {
+        false
+    }
 
     /// The game's tuner, if it has one: the config panel's button shows only then.
     fn config(&mut self) -> Option<&mut dyn crate::tune::Config> {
@@ -230,10 +257,7 @@ impl<A: App> Runner<A> {
 
         let gfx = self.graphics.as_mut().expect("graphics");
         let dev = self.dev.as_mut().expect("overlay");
-        let (app, panel) = (&mut self.app, &mut dev.panel);
-        draw(gfx, &dev.ctx, &mut dev.state, &mut dev.renderer, &self.shapes, frame.size, |ui| {
-            panel.show(ui.ctx(), app);
-        });
+        draw(gfx, &dev.ctx, &mut dev.state, &mut dev.renderer, &self.shapes, &frame, &mut self.app, &mut dev.panel);
     }
 }
 
@@ -297,6 +321,9 @@ impl<A: App> ApplicationHandler<Graphics> for Runner<A> {
         {
             loading.remove();
         }
+
+        let gpu = Gpu { device: &graphics.device, queue: &graphics.queue, format: graphics.config.format };
+        self.app.gpu_init(&gpu);
 
         graphics.window.request_redraw();
         self.graphics = Some(graphics);
@@ -362,20 +389,22 @@ impl<A: App> ApplicationHandler<Graphics> for Runner<A> {
     }
 }
 
-fn draw(
+#[allow(clippy::too_many_arguments)]
+fn draw<A: App>(
     gfx: &mut Graphics,
     ctx: &egui::Context,
     state: &mut egui_winit::State,
     renderer: &mut egui_wgpu::Renderer,
     shapes: &Shapes,
-    size: Vec2,
-    overlay: impl FnMut(&mut egui::Ui),
+    frame: &Frame,
+    app: &mut A,
+    panel: &mut Panel,
 ) {
     use wgpu::CurrentSurfaceTexture as Current;
     // egui runs every frame, even one the surface skips, so no press, release
     // or texture update is ever dropped.
     let raw = state.take_egui_input(&gfx.window);
-    let mut out = ctx.run_ui(raw, overlay);
+    let mut out = ctx.run_ui(raw, |ui| panel.show(ui.ctx(), app));
     let textures = std::mem::take(&mut out.textures_delta);
     #[allow(unused_mut)]
     let mut platform = out.platform_output;
@@ -421,7 +450,9 @@ fn draw(
     };
     let view = output.texture.create_view(&Default::default());
     let mut encoder = gfx.device.create_command_encoder(&Default::default());
-    gfx.shapes.render(&gfx.device, &gfx.queue, &mut encoder, &view, size, shapes);
+    let gpu = Gpu { device: &gfx.device, queue: &gfx.queue, format: gfx.config.format };
+    let covered = app.gpu_frame(&gpu, &mut encoder, &view, frame);
+    gfx.shapes.render(&gfx.device, &gfx.queue, &mut encoder, &view, frame.size, shapes, !covered);
 
     let jobs = ctx.tessellate(out.shapes, out.pixels_per_point);
     let screen = egui_wgpu::ScreenDescriptor {
