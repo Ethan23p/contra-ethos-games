@@ -389,7 +389,9 @@ impl ShapeRenderer {
         Self { pipeline, globals, bind_group, instances: instance_buffer(device, capacity), capacity, goo }
     }
 
-    /// Records one pass that clears `target` and draws everything in `shapes`.
+    /// Records one pass that draws everything in `shapes` into `target`,
+    /// clearing it first when `clear` (otherwise drawing over what's there).
+    #[allow(clippy::too_many_arguments)]
     pub fn render(
         &mut self,
         device: &wgpu::Device,
@@ -398,6 +400,7 @@ impl ShapeRenderer {
         target: &wgpu::TextureView,
         size: Vec2,
         shapes: &Shapes,
+        clear: bool,
     ) {
         let globals = Globals { viewport: size.into(), _pad: [0.0; 2] };
         queue.write_buffer(&self.globals, 0, bytemuck::bytes_of(&globals));
@@ -420,7 +423,7 @@ impl ShapeRenderer {
                 resolve_target: None,
                 depth_slice: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color { r, g, b, a }),
+                    load: if clear { wgpu::LoadOp::Clear(wgpu::Color { r, g, b, a }) } else { wgpu::LoadOp::Load },
                     store: wgpu::StoreOp::Store,
                 },
             })],
