@@ -155,3 +155,4 @@ None right now.
 | 2026-10-31 | The contra-ethos games doc is the authority over this file and holds the specs; the old standalone spec docs point to it. | Ethan's call, matching the website's doc. |
 | 2026-11-01 | Blob saves move to `blob2`: games in progress on `blob1` start fresh. Dice stays `dice1`, and accepts one slot for the opening. | Blob's new state (groups, difficulty, the script) has no default worth guessing. |
 | 2026-11-01 | New groups count as in play from their first launch, entering through `Game::script`. | One path for the opening and for difficulty, and seeds can't introduce a colour before the launcher does. |
+| 2026-11-26 | The engine delivers a right-mouse press as `Input::Secondary(pos)`, outside the gesture recognizer; touch has no equivalent. | The falling-sand brush cancels a pending stamp on a right click (Ethan's design doc); other games ignore it. |
