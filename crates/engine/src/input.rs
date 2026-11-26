@@ -36,6 +36,9 @@ pub enum Input {
     DragStart(Vec2),
     Drag(Vec2),
     DragEnd(Vec2),
+    /// A secondary press (the right mouse button) where it went down: a cancel or
+    /// context action. Touch has none; apps give touch its own way.
+    Secondary(Vec2),
 }
 
 /// Gesture thresholds. Apps return these from [`crate::App::gestures`], so they

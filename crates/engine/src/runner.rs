@@ -367,6 +367,17 @@ impl<A: App> ApplicationHandler<Graphics> for Runner<A> {
                     self.pointer(Pointer { id: 0, phase, pos });
                 }
             }
+            WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Right, .. } => {
+                let frame = self.frame_info(0.0);
+                let pos = self.mouse;
+                let overlay = self.dev.as_ref().is_some_and(|d| {
+                    let at = pos / d.ctx.pixels_per_point();
+                    d.panel.takes(egui::pos2(at.x, at.y))
+                });
+                if !overlay {
+                    self.app.input(Input::Secondary(pos), &frame);
+                }
+            }
             WindowEvent::Touch(t) => {
                 let phase = match t.phase {
                     TouchPhase::Started => Phase::Down,
